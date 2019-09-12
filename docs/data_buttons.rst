@@ -16,8 +16,8 @@ optionally an image size), and get a mosaic out. No muss, no fuss.
 Installation
 ============
 
-* Clone this repository with ``git clone https://github.com/thomaswilliamsastro/data_buttons`` into a folder of your
-  choice
+* Clone the ``data_buttons`` repository with ``git clone https://github.com/thomaswilliamsastro/data_buttons`` into a
+  folder of your choice
 
 * Navigate to the directory that contains ``setup.py``
 

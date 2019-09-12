@@ -12,13 +12,13 @@ from . import tools
 
 
 def sdss_button(
-        galaxies,
-        filters='all',
-        radius=0.2 * u.degree,
-        filepath=None,
-        overwrite=False,
-        verbose=False,
-        **kwargs
+    galaxies,
+    filters="all",
+    radius=0.2 * u.degree,
+    filepath=None,
+    overwrite=False,
+    verbose=False,
+    **kwargs
 ):
     """Create an SDSS mosaic, given a galaxy name.
     
@@ -47,8 +47,8 @@ def sdss_button(
     if isinstance(galaxies, str):
         galaxies = [galaxies]
 
-    if filters == 'all':
-        filters = ['u', 'g', 'r', 'i', 'z']
+    if filters == "all":
+        filters = ["u", "g", "r", "i", "z"]
 
     if isinstance(filters, str):
         filters = [filters]
@@ -63,47 +63,44 @@ def sdss_button(
 
         for sdss_filter in filters:
 
-            if os.path.exists(galaxy + '_' + sdss_filter + '.fits') and \
-                    not overwrite:
+            if os.path.exists(galaxy + "_" + sdss_filter + ".fits") and not overwrite:
                 continue
 
-            if not os.path.exists(galaxy + '/' + sdss_filter):
-                os.mkdir(galaxy + '/' + sdss_filter)
+            if not os.path.exists(galaxy + "/" + sdss_filter):
+                os.mkdir(galaxy + "/" + sdss_filter)
 
             if verbose:
-                print('Downloading data')
-                
-            # Montage uses its size as the length of the square, since 
+                print("Downloading data")
+
+            # Montage uses its size as the length of the square, since
             # we want a radius use twice that.
 
             mArchiveDownload(
-                'SDSS ' + sdss_filter,
-                galaxy, 2*radius.value,
-                galaxy + '/' + sdss_filter,
-                )
+                "SDSS " + sdss_filter,
+                galaxy,
+                2 * radius.value,
+                galaxy + "/" + sdss_filter,
+            )
 
             # Mosaic all these files together.
 
             if verbose:
-                print('Beginning mosaic')
-                
-            _ = mHdr(galaxy,
-                     2*radius.value, 
-                     2*radius.value,
-                     galaxy+'/header.hdr',
-                     resolution=0.4,
-                     )
+                print("Beginning mosaic")
 
-            tools.mosaic(galaxy + '/' + sdss_filter,
-                         header=galaxy+'/header.hdr',
-                         **kwargs
-                         )
+            _ = mHdr(
+                galaxy,
+                2 * radius.value,
+                2 * radius.value,
+                galaxy + "/header.hdr",
+                resolution=0.4,
+            )
 
-            os.rename('mosaic/mosaic.fits',
-                      galaxy + '_' + sdss_filter + '.fits')
+            tools.mosaic(
+                galaxy + "/" + sdss_filter, header=galaxy + "/header.hdr", **kwargs
+            )
+
+            os.rename("mosaic/mosaic.fits", galaxy + "_" + sdss_filter + ".fits")
 
             # Clear out the mosaic folder.
 
-            shutil.rmtree('mosaic/',
-                          ignore_errors=True,
-                          )
+            shutil.rmtree("mosaic/", ignore_errors=True)

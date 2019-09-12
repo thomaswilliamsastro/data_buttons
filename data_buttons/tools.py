@@ -8,13 +8,7 @@ from MontagePy.archive import *
 from MontagePy.main import *
 
 
-def mosaic(
-        input_folder,
-        header=None,
-        output_folder='mosaic',
-        background_match=True,
-):
-
+def mosaic(input_folder, header=None, output_folder="mosaic", background_match=True):
 
     """Mosaic together a folder full of .fits files.
     
@@ -27,7 +21,7 @@ def mosaic(
     Args:
         input_folder (str): Folder of raw files to mosaic.
         header (str, optional): Output from mHdr. If not specified, 
-            will mosaic all of the images together not matter the 
+            will mosaic all of the images together no matter the
             overlap.
         output_folder (str, optional): Working folder for mosaicking.
             Defaults to 'mosaic'.
@@ -44,93 +38,73 @@ def mosaic(
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
 
-    os.mkdir(output_folder + '/projected')
+    os.mkdir(output_folder + "/projected")
     if background_match:
-        os.mkdir(output_folder + '/diffs')
-        os.mkdir(output_folder + '/corrected')
+        os.mkdir(output_folder + "/diffs")
+        os.mkdir(output_folder + "/corrected")
 
     # Make an optimum header for these images
 
-    _ = mImgtbl(
-        input_folder,
-        output_folder + '/images.tbl',
-        )
-    
+    _ = mImgtbl(input_folder, output_folder + "/images.tbl")
+
     if header is None:
-        _ = mMakeHdr(
-            output_folder + '/images.tbl',
-            output_folder + '/header.hdr',
-            )
+        _ = mMakeHdr(output_folder + "/images.tbl", output_folder + "/header.hdr")
     else:
-        shutil.copy(header,
-                    output_folder + '/header.hdr')
+        shutil.copy(header, output_folder + "/header.hdr")
 
     # Project the original images to this header
 
     _ = mProjExec(
         input_folder,
-        output_folder + '/images.tbl',
-        output_folder + '/header.hdr',
-        projdir=output_folder + '/projected',
-        quickMode=True)
+        output_folder + "/images.tbl",
+        output_folder + "/header.hdr",
+        projdir=output_folder + "/projected",
+        quickMode=True,
+    )
 
-    _ = mImgtbl(
-        output_folder + '/projected',
-        output_folder + '/images.tbl',
-        )
+    _ = mImgtbl(output_folder + "/projected", output_folder + "/images.tbl")
 
     # If selected, perform background matching.
 
     if background_match:
-        _ = mOverlaps(
-            output_folder + '/images.tbl',
-            output_folder + '/diffs.tbl',
-            )
+        _ = mOverlaps(output_folder + "/images.tbl", output_folder + "/diffs.tbl")
         _ = mDiffFitExec(
-            output_folder + '/projected',
-            output_folder + '/diffs.tbl',
-            output_folder + '/header.hdr',
-            output_folder + '/diffs',
-            output_folder + '/fits.tbl',
-            )
+            output_folder + "/projected",
+            output_folder + "/diffs.tbl",
+            output_folder + "/header.hdr",
+            output_folder + "/diffs",
+            output_folder + "/fits.tbl",
+        )
         _ = mBgModel(
-            output_folder + '/images.tbl',
-            output_folder + '/fits.tbl',
-            output_folder + '/corrections.tbl',
-            )
+            output_folder + "/images.tbl",
+            output_folder + "/fits.tbl",
+            output_folder + "/corrections.tbl",
+        )
         _ = mBgExec(
-            output_folder + '/projected',
-            output_folder + '/images.tbl',
-            output_folder + '/corrections.tbl',
-            output_folder + '/corrected',
-            )
-        _ = mImgtbl(
-            output_folder + '/corrected',
-            output_folder + '/images.tbl')
+            output_folder + "/projected",
+            output_folder + "/images.tbl",
+            output_folder + "/corrections.tbl",
+            output_folder + "/corrected",
+        )
+        _ = mImgtbl(output_folder + "/corrected", output_folder + "/images.tbl")
 
     # Finally, coadd the images
 
     if not background_match:
-        folder = output_folder + '/projected'
+        folder = output_folder + "/projected"
     else:
-        folder = output_folder + '/corrected'
+        folder = output_folder + "/corrected"
 
     _ = mAdd(
         folder,
-        output_folder + '/images.tbl',
-        output_folder + '/header.hdr',
-        output_folder + '/mosaic.fits',
-        )
+        output_folder + "/images.tbl",
+        output_folder + "/header.hdr",
+        output_folder + "/mosaic.fits",
+    )
 
     # Remove the temp folders we've made along the way
 
-    shutil.rmtree(output_folder + '/projected',
-                  ignore_errors=True,
-                  )
+    shutil.rmtree(output_folder + "/projected", ignore_errors=True)
     if background_match:
-        shutil.rmtree(output_folder + '/diffs',
-                      ignore_errors=True,
-                      )
-        shutil.rmtree(output_folder + '/corrected',
-                      ignore_errors=True,
-                      )
+        shutil.rmtree(output_folder + "/diffs", ignore_errors=True)
+        shutil.rmtree(output_folder + "/corrected", ignore_errors=True)
