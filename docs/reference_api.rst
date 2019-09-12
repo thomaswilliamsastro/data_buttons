@@ -20,5 +20,5 @@ SDSS
 Tools
 ******
 
-.. automodule:: data_buttons.mosaic
+.. automodule:: data_buttons.tools
     :members:

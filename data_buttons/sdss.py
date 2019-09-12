@@ -8,7 +8,7 @@ import astropy.units as u
 from MontagePy.archive import mArchiveDownload
 from MontagePy.main import mHdr
 
-from . import mosaic
+from . import tools
 
 
 def sdss_button(
@@ -94,10 +94,10 @@ def sdss_button(
                      resolution=0.4,
                      )
 
-            mosaic.mosaic(galaxy + '/' + sdss_filter,
-                          header=galaxy+'/header.hdr',
-                          **kwargs
-                          )
+            tools.mosaic(galaxy + '/' + sdss_filter,
+                         header=galaxy+'/header.hdr',
+                         **kwargs
+                         )
 
             os.rename('mosaic/mosaic.fits',
                       galaxy + '_' + sdss_filter + '.fits')

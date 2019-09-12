@@ -13,7 +13,7 @@ from astropy.io import fits
 from astroquery.mast import Observations
 from MontagePy.main import mHdr
 
-from . import mosaic
+from . import tools
 
 
 def galex_button(
@@ -175,10 +175,10 @@ def galex_button(
                              resolution=1.5,
                              )
 
-                    mosaic.mosaic(galaxy + '/' + galex_filter,
-                                  header=galaxy+'/header.hdr',
-                                  **kwargs
-                                  )
+                    tools.mosaic(galaxy + '/' + galex_filter,
+                                 header=galaxy+'/header.hdr',
+                                 **kwargs
+                                 )
 
                     # Move the mosaic out and rename
 

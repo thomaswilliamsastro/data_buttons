@@ -3,12 +3,7 @@ Data Buttons
 ############
 
 .. toctree::
-   :hidden:
-
-   self
-
-.. toctree::
    :maxdepth: 2
 
-   main
+   data_buttons
    reference_api

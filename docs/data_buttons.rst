@@ -16,7 +16,12 @@ optionally an image size), and get a mosaic out. No muss, no fuss.
 Installation
 ============
 
-**This hasn't been done yet. I'll get around to it.**
+* Clone this repository with ``git clone https://github.com/thomaswilliamsastro/data_buttons`` into a folder of your
+  choice
+
+* Navigate to the directory that contains ``setup.py``
+
+* Install using ``python setup.py install``
 
 =======================================
 Example: Creating a GALEX Mosaic of M51
