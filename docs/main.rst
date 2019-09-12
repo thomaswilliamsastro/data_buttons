@@ -10,7 +10,7 @@ Introduction
 final image.
 
 The biggest feature of this module is the Data Button\ :sup:`TM`\, which allows you an easy way to put in an object (and
-optionally an image size), and get a mosaic out. No muss, no fuss
+optionally an image size), and get a mosaic out. No muss, no fuss.
 
 ============
 Installation
