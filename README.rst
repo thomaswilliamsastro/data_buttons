@@ -23,6 +23,14 @@ Installation
 Documentation
 =============
 
+.. code-block:: python
+
+    import os
+    from data_button import galex
+
+    os.chdir('directory')
+    galex.galex_button('M51')
+
 This program is very simple, but documentation is available at https://data-buttons.readthedocs.io/en/latest/.
 
 =========
