@@ -29,6 +29,11 @@ def galex_button(
     Using a galaxy name and radius, queries around that object, 
     downloads available GALEX data and mosaics into a final product.
     
+    Because GALEX images are in counts/s and the integrations may be 
+    different lengths, we convert back to a raw count, add the frames
+    and convert back to counts/s at the end. This effectively weights
+    the frame by exposure time.
+    
     Args:
         galaxies (str or list): Names of galaxies to create mosaics for.
             Resolved by NED.
@@ -43,6 +48,10 @@ def galex_button(
             directory.
         overwrite (bool, optional): Whether to create a mosaic even if 
             one already exists. Defaults to False.
+            
+    Todo:
+        * Create verbose debugging statements.
+        * Find a way to turn off downloading files information.
     
     """
 
@@ -64,33 +73,33 @@ def galex_button(
             os.mkdir(galaxy)
 
         if (
-            not os.path.exists(galaxy + "_FUV.fits")
-            or not os.path.exists(galaxy + "_NUV.fits")
+            not os.path.exists(galaxy + "_FUV_jy.fits")
+            or not os.path.exists(galaxy + "_NUV_jy.fits")
             or overwrite
         ):
 
             obs_table = Observations.query_object(galaxy, radius=radius)
 
-            # Pull out available data, and download it
-
-            query_results = np.where(obs_table["filters"] == filters[0])[0]
-
-            # If there isn't any GALEX coverage, just skip
-
-            if len(query_results) == 0:
-                print(galaxy + " missing!")
-
-                continue
-
-            for query_result in query_results:
-                dataProductsByID = Observations.get_product_list(
-                    obs_table[query_result]
-                )
-                _ = Observations.download_products(
-                    dataProductsByID, download_dir="galex_temp/" + galaxy, mrp_only=True
-                )
-
             for galex_filter in filters:
+                
+                # Pull out available data, and download it
+
+                query_results = np.where(obs_table["filters"] == galex_filter)[0]
+    
+                # If there isn't any GALEX coverage, just skip
+    
+                if len(query_results) == 0:
+                    print(galaxy + " missing!")
+    
+                    continue
+    
+                for query_result in query_results:
+                    dataProductsByID = Observations.get_product_list(
+                        obs_table[query_result]
+                    )
+                    _ = Observations.download_products(
+                        dataProductsByID, download_dir="galex_temp/" + galaxy, mrp_only=True
+                    )
 
                 if (
                     os.path.exists(galaxy + "_" + galex_filter + ".fits")
@@ -100,6 +109,10 @@ def galex_button(
 
                 if not os.path.exists(galaxy + "/" + galex_filter):
                     os.mkdir(galaxy + "/" + galex_filter)
+                if not os.path.exists(galaxy + "/" + galex_filter+'/int'):
+                    os.mkdir(galaxy + "/" + galex_filter+'/int')
+                if not os.path.exists(galaxy + "/" + galex_filter+'/exp'):
+                    os.mkdir(galaxy + "/" + galex_filter+'/exp')
 
                 ext_name = {"NUV": "nd", "FUV": "fd"}[galex_filter]
 
@@ -127,7 +140,7 @@ def galex_button(
                         galaxy
                         + "/"
                         + galex_filter
-                        + "/"
+                        + "/int/"
                         + galaxy
                         + "_"
                         + str(filename_ext)
@@ -137,9 +150,11 @@ def galex_button(
                     filename_ext += 1
 
                 # Read in these files and set anything more than 35
-                # arcmin out to NaN
+                # arcmin out to NaN. At the same time, convert from 
+                # counts/s to raw counts so it's properly weighted in
+                # the coadd later.
 
-                galex_files = glob.glob(galaxy + "/" + galex_filter + "/*")
+                galex_files = glob.glob(galaxy + "/" + galex_filter + "/int/*")
 
                 for galex_file in galex_files:
                     hdu = fits.open(galex_file)[0]
@@ -156,8 +171,19 @@ def galex_button(
                     r = iv ** 2 + jv ** 2
 
                     hdu.data[r >= 1400 ** 2] = np.nan
+                    
+                    hdu.data *= hdu.header['EXPTIME']
 
                     fits.writeto(galex_file, hdu.data, hdu.header, overwrite=True)
+                    
+                    # Also create a map of exposure time
+                    
+                    exp_file = galex_file.split('/int/')
+                    exp_file = exp_file[0]+'/exp/'+exp_file[1]
+                    
+                    exposure_time = np.ones(hdu.data.shape)*hdu.header['EXPTIME']
+                    exposure_time[np.isnan(hdu.data) == True] = np.nan
+                    fits.writeto(exp_file, exposure_time, hdu.header, overwrite=True)
 
                 # And mosaic!
 
@@ -175,15 +201,23 @@ def galex_button(
                     )
 
                     tools.mosaic(
-                        galaxy + "/" + galex_filter,
+                        galaxy + "/" + galex_filter+'/int',
                         header=galaxy + "/header.hdr",
-                        **kwargs
+                        coadd=3
                     )
-
-                    # Move the mosaic out and rename
-
+                    
                     os.rename(
                         "mosaic/mosaic.fits", galaxy + "_" + galex_filter + ".fits"
+                    )
+
+                    tools.mosaic(
+                        galaxy + "/" + galex_filter + "/exp",
+                        header=galaxy + "/header.hdr",
+                        coadd=3
+                    )
+
+                    os.rename(
+                        "mosaic/mosaic.fits", galaxy + "_" + galex_filter + "_exp.fits"
                     )
 
                     shutil.rmtree("mosaic/", ignore_errors=True)
@@ -191,10 +225,74 @@ def galex_button(
                 else:
 
                     os.rename(
-                        galaxy + "/" + galex_filter + "/" + galaxy + "_0.fits",
+                        galaxy + "/" + galex_filter + "/" + galaxy + "/exp/_0.fits",
                         galaxy + "_" + galex_filter + ".fits",
                     )
+                    os.rename(
+                        galaxy + "/" + galex_filter + "/" + galaxy + "/int/_0.fits",
+                        galaxy + "_" + galex_filter + "_exp.fits",
+                    )
+                    
+                # Convert back to counts/sec
+                
+                hdu = fits.open(galaxy + "_" + galex_filter + ".fits")[0]
+                hdu_exp = fits.open(galaxy + "_" + galex_filter + "_exp.fits")[0]
+                
+                hdu.data /= hdu_exp.data
+                
+                fits.writeto(galaxy + "_" + galex_filter + ".fits",
+                             hdu.data,hdu.header,
+                             overwrite=True)
+                    
+                # Convert to Jy.
+                
+                convert_to_jy(galaxy + "_" + galex_filter,
+                              galex_filter)
 
-        # Clean up any temporary files.
-
-        shutil.rmtree("galex_temp/" + galaxy, ignore_errors=True)
+                # Clean up any temporary files.
+        
+                shutil.rmtree("galex_temp/" + galaxy, ignore_errors=True)
+        
+def convert_to_jy(hdu_in,galex_filter,save=True):
+    
+    """Convert from GALEX counts/s to Jy/pixel.
+    
+    GALEX maps are provided in units of counts/s. These can be converted
+    to more helpful units via the conversion factors given at
+    https://asd.gsfc.nasa.gov/archive/galex/FAQ/counts_background.html.
+    
+    Args:
+        hdu_in (str or astropy.io.fits.PrimaryHDU): File name of GALEX 
+            .fits file (excluding the .fits extension), or an Astropy 
+            PrimaryHDU instance (i.e. the result of ``fits.open(file)[0]``.
+        galex_filter (str): Either 'NUV' or 'FUV'.
+        save (bool, optional): Save out the converted file. It'll save
+            the original file with an appended '_jy'. Defaults to True.
+        
+    Returns:
+        astropy.io.fits.PrimaryHDU: The HDU in units of Jy/pix.
+    
+    """
+    
+    if isinstance(hdu_in,str):
+        hdu = fits.open(hdu_in+'.fits')[0]
+    else:
+        hdu = hdu_in.copy()
+    
+    data = hdu.data.copy()
+    header = hdu.header.copy()
+    
+    # Conversion factors here from Clark+ (2017)
+    
+    conversion_factor = {'FUV':1.076e-4,
+                         'NUV':3.373e-5}[galex_filter]
+    
+    data *= conversion_factor
+    header['BUNIT'] = 'Jy/pix'
+    
+    if save:
+        fits.writeto(hdu_in+'_jy.fits',
+                     data,header,
+                     overwrite=True)
+        
+    return fits.PrimaryHDU(data=data,header=header)

@@ -8,7 +8,8 @@ from MontagePy.archive import *
 from MontagePy.main import *
 
 
-def mosaic(input_folder, header=None, output_folder="mosaic", background_match=True):
+def mosaic(input_folder, header=None, output_folder="mosaic", background_match=True,
+           **kwargs):
 
     """Mosaic together a folder full of .fits files.
     
@@ -59,7 +60,7 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
         output_folder + "/images.tbl",
         output_folder + "/header.hdr",
         projdir=output_folder + "/projected",
-        quickMode=True,
+        quickMode=False,
     )
 
     _ = mImgtbl(output_folder + "/projected", output_folder + "/images.tbl")
@@ -100,6 +101,7 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
         output_folder + "/images.tbl",
         output_folder + "/header.hdr",
         output_folder + "/mosaic.fits",
+        **kwargs
     )
 
     # Remove the temp folders we've made along the way
