@@ -128,6 +128,9 @@ def sdss_button(
                 shutil.rmtree("mosaic/", ignore_errors=True)
                 
             if 2 in steps:
+                
+                if verbose:
+                    print('Converting to Jy')
             
                 # Convert to Jy.
                 

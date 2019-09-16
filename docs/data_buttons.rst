@@ -28,7 +28,7 @@ Current capabilities
 ====================
 
 ``data_buttons`` currently works with GALEX, SDSS, and WISE data. In the case of GALEX, the mosaic is weighted by the
-exposure time and will also produce a *_exptime.fits file.
+exposure time and will also produce an _exptime.fits file.
 
 More telescopes and data coming soon!
 

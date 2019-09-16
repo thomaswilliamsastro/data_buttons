@@ -259,6 +259,9 @@ def galex_button(
                     
             if 2 in steps:
                 
+                if verbose:
+                    print('Converting to Jy')
+                
                 # Convert to Jy.
                 
                 convert_to_jy(galaxy + "_GALEX_" + galex_filter,

@@ -131,11 +131,12 @@ def wise_button(
     
                 shutil.rmtree("mosaic/", ignore_errors=True)
             
-            # Convert to Jy.
-            
             if 2 in steps:
                 
-                print('Converting to Jy')
+                if verbose:
+                    print('Converting to Jy')
+                    
+                # Convert to Jy.
             
                 convert_to_jy(galaxy + "_W" + wise_filter,
                               wise_filter)
