@@ -23,6 +23,15 @@ Installation
 
 * Install using ``python setup.py install``
 
+====================
+Current capabilities
+====================
+
+``data_buttons`` currently works with GALEX, SDSS, and WISE data. In the case of GALEX, the mosaic is weighted by the
+exposure time and will also produce a *_exptime.fits file.
+
+More telescopes and data coming soon!
+
 =======================================
 Example: Creating a GALEX Mosaic of M51
 =======================================
@@ -38,5 +47,5 @@ Using the Data Button\ :sup:`TM`\, we'll create a GALEX mosaic of the classic po
     galex.galex_button('M51')
 
 And that's all there is to it! The program will query the necessary databases, download the data and mosaic it for you.
-It'll put the final files (in this case, M51_NUV.fits and M51_FUV.fits), into the directory you specify in the
-``os.chdir()`` call.
+It'll put the final files (in this case, M51_GALEX_NUV_jy.fits and M51_GALEX_FUV_jy.fits), into the directory you specify 
+in the ``os.chdir()`` call.

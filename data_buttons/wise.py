@@ -11,8 +11,10 @@ from MontagePy.main import mHdr
 
 from . import tools
 
+# New imports
 
-def sdss_button(
+
+def wise_button(
     galaxies,
     filters="all",
     radius=0.2 * u.degree,
@@ -22,17 +24,18 @@ def sdss_button(
     verbose=False,
     **kwargs
 ):
-    """Create an SDSS mosaic, given a galaxy name.
+    
+    """Create a WISE mosaic, given a galaxy name.
     
     Using a galaxy name and radius, queries around that object, 
-    downloads available SDSS data and mosaics into a final product.
+    downloads available WISE data and mosaics into a final product.
     
     Args:
         galaxies (str or list): Names of galaxies to create mosaics for.
             Resolved by NED.
-        filters (str or list, optional): Any combination of 'u', 'g', 
-            'r', 'i', or 'z'. If you want everything, select 'all'. 
-            Defaults to 'all'.
+        filters (str or list, optional): Any combination of '1', '2', 
+            '3', and '4'. If you want everything, select 'all'. Defaults 
+            to 'all'.
         radius (astropy.units.Quantity, optional): Radius around the 
             galaxy to search for observations. Defaults to 0.2 degrees.
         filepath (str, optional): Path to save the working and output
@@ -51,12 +54,12 @@ def sdss_button(
     Todo:
     
     """
-
+    
     if isinstance(galaxies, str):
         galaxies = [galaxies]
 
     if filters == "all":
-        filters = ["u", "g", "r", "i", "z"]
+        filters = ['1','2','3','4']
 
     if isinstance(filters, str):
         filters = [filters]
@@ -79,29 +82,29 @@ def sdss_button(
         if not os.path.exists(galaxy):
             os.mkdir(galaxy)
 
-        for sdss_filter in filters:
+        for wise_filter in filters:
             
             if verbose:
-                print('Beginning SDSS_'+sdss_filter)
-
-            if not os.path.exists(galaxy + "/SDSS_" + sdss_filter):
-                os.mkdir(galaxy + "/SDSS_" + sdss_filter)
+                print('Beginning W'+wise_filter)
+            
+            if not os.path.exists(galaxy + "/W" + wise_filter):
+                os.mkdir(galaxy + "/W" + wise_filter)
                 
             if 1 in steps:
 
                 if verbose:
                     print("Downloading data")
     
-                # Montage uses its size as the length of the square, since
-                # we want a radius use twice that.
+                # Montage uses its size as the length of the square, 
+                # since we want a radius use twice that.
     
                 mArchiveDownload(
-                    "SDSS " + sdss_filter,
+                    "WISE " + wise_filter,
                     galaxy,
                     2 * radius.value,
-                    galaxy + "/SDSS_" + sdss_filter,
+                    galaxy + "/W" + wise_filter,
                 )
-    
+                
                 # Mosaic all these files together.
     
                 if verbose:
@@ -112,42 +115,44 @@ def sdss_button(
                     2 * radius.value,
                     2 * radius.value,
                     galaxy + "/header.hdr",
-                    resolution=0.4,
+                    resolution=1.375,
                 )
     
                 tools.mosaic(
-                    galaxy + "/SDSS_" + sdss_filter, 
-                    header=galaxy + "/header.hdr", **kwargs
+                    galaxy + "/W" + wise_filter, 
+                    header=galaxy + "/header.hdr", 
+                    **kwargs
                 )
     
                 os.rename("mosaic/mosaic.fits", 
-                          galaxy + "_SDSS_" + sdss_filter + ".fits")
+                          galaxy + "_W" + wise_filter + ".fits")
     
                 # Clear out the mosaic folder.
     
                 shutil.rmtree("mosaic/", ignore_errors=True)
-                
+            
+            # Convert to Jy.
+            
             if 2 in steps:
-            
-                # Convert to Jy.
                 
-                convert_to_jy(galaxy + "_SDSS_" + sdss_filter,
-                              sdss_filter)
+                print('Converting to Jy')
             
-def convert_to_jy(hdu_in,sdss_filter,save=True):
+                convert_to_jy(galaxy + "_W" + wise_filter,
+                              wise_filter)
+            
+def convert_to_jy(hdu_in,wise_filter,save=True):
     
-    """Convert from SDSS nanomaggies to Jy/pixel.
+    """Convert from WISE DN to Jy/pixel.
     
-    SDSS maps are provided in convenience units of 'nanomaggies'. In 
-    general, 1 nanomaggy is 3.631 x 10\ :sup:`-6`\ Jy, but there are are 
-    some offsets for the u and z band. This is detailed at 
-    http://www.sdss3.org/dr8/algorithms/magnitudes.php.
+    WISE maps are provided in convenience units of data numbers (DN). The
+    constants to convert them are given in Table 1 of
+    http://wise2.ipac.caltech.edu/docs/release/prelim/expsup/sec2_3f.html.
     
     Args:
-        hdu_in (str or astropy.io.fits.PrimaryHDU): File name of SDSS 
+        hdu_in (str or astropy.io.fits.PrimaryHDU): File name of WISE 
             .fits file (excluding the .fits extension), or an Astropy 
             PrimaryHDU instance (i.e. the result of ``fits.open(file)[0]``).
-        sdss_filter (str): Either 'u', 'g', 'r', 'i', or 'z'.
+        galex_filter (str): Either '1', '2', '3', or '4'.
         save (bool, optional): Save out the converted file. It'll save
             the original file with an appended '_jy'. Defaults to True.
         
@@ -164,19 +169,14 @@ def convert_to_jy(hdu_in,sdss_filter,save=True):
     data = hdu.data.copy()
     header = hdu.header.copy()
     
-    # Convert from nanomaggies to flux. In most bands, 1 nanomaggy = 3.631e-6 Jy.
-    # For the u and z band, we have magnitude corrections of +0.02 and -0.04
+    # Convert from DN to Jy
         
-    data *= 3.631e-6
+    dn_factor = {'1':1.935e-6,
+                 '2':2.7048e-6,
+                 '3':2.9045e-6,
+                 '4':5.2269e-5}[wise_filter]
     
-    if sdss_filter == 'u':
-        nanomag_corr = 10**(0.04/2.51)
-    elif sdss_filter == 'z':
-        nanomag_corr = 10**(-0.02/2.51)
-    else:
-        nanomag_corr = 1
-    
-    data *= nanomag_corr
+    data *= dn_factor
     
     header['BUNIT'] = 'Jy/pix'
     
@@ -186,3 +186,5 @@ def convert_to_jy(hdu_in,sdss_filter,save=True):
                      overwrite=True)
         
     return fits.PrimaryHDU(data=data,header=header)
+            
+            
