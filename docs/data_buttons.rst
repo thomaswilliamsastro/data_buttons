@@ -27,10 +27,16 @@ Installation
 Current capabilities
 ====================
 
-``data_buttons`` currently works with GALEX, SDSS, and WISE data. In the case of GALEX, the mosaic is weighted by the
-exposure time and will also produce an _exptime.fits file.
+``data_buttons`` currently works with GALEX (``data_buttons.galex``), 
+SDSS (``data_buttons.sdss``), 2MASS (``data_buttons.two_mass``), 
+and WISE ``data_buttons.wise`` data. In the case of GALEX, the mosaic 
+is weighted by the exposure time and will also produce an _exptime.fits 
+file. More telescopes and data coming soon!
 
-More telescopes and data coming soon!
+``data_buttons`` also offers a module with image-related tools 
+(``data_buttons.tools``). Currently, this allows you to create a mosaic
+of pre-downloaded files, without going through the whole Data Button.
+More useful tools coming soon!
 
 =======================================
 Example: Creating a GALEX Mosaic of M51

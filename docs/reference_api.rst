@@ -2,23 +2,37 @@
 Reference/API
 #############
 
-*******
+*****
 GALEX
-*******
+*****
 
 .. automodule:: data_buttons.galex
     :members:
 
-*******
+****
 SDSS
-*******
+****
 
 .. automodule:: data_buttons.sdss
     :members:
+    
+*****
+2MASS
+*****
 
-******
+.. automodule:: data_buttons.two_mass
+    :members:
+
+****
+WISE
+****
+
+.. automodule:: data_buttons.wise
+    :members:
+
+*****
 Tools
-******
+*****
 
 .. automodule:: data_buttons.tools
     :members:
