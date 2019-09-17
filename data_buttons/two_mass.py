@@ -3,9 +3,11 @@ from __future__ import absolute_import, print_function, division
 
 import os
 import shutil
+import glob
 
 import astropy.units as u
 from astropy.io import fits
+import numpy as np
 from MontagePy.archive import mArchiveDownload
 from MontagePy.main import mHdr
 
@@ -14,7 +16,7 @@ from . import tools
 # New imports
 
 
-def wise_button(
+def two_mass_button(
     galaxies,
     filters="all",
     radius=0.2 * u.degree,
@@ -25,16 +27,16 @@ def wise_button(
     **kwargs
 ):
     
-    """Create a WISE mosaic, given a galaxy name.
+    """Create a 2MASS mosaic, given a galaxy name.
     
     Using a galaxy name and radius, queries around that object, 
-    downloads available WISE data and mosaics into a final product.
+    downloads available 2MASS data and mosaics into a final product.
     
     Args:
         galaxies (str or list): Names of galaxies to create mosaics for.
             Resolved by NED.
-        filters (str or list, optional): Any combination of '1', '2', 
-            '3', and '4'. If you want everything, select 'all'. Defaults 
+        filters (str or list, optional): Any combination of 'J', 'H', 
+            and 'K'. If you want everything, select 'all'. Defaults 
             to 'all'.
         radius (astropy.units.Quantity, optional): Radius around the 
             galaxy to search for observations. Defaults to 0.2 degrees.
@@ -59,7 +61,7 @@ def wise_button(
         galaxies = [galaxies]
 
     if filters == "all":
-        filters = ['1','2','3','4']
+        filters = ['J', 'H', 'K']
 
     if isinstance(filters, str):
         filters = [filters]
@@ -82,13 +84,13 @@ def wise_button(
         if not os.path.exists(galaxy):
             os.mkdir(galaxy)
 
-        for wise_filter in filters:
+        for two_mass_filter in filters:
             
             if verbose:
-                print('Beginning W'+wise_filter)
+                print('Beginning 2MASS '+two_mass_filter)
             
-            if not os.path.exists(galaxy + "/W" + wise_filter):
-                os.mkdir(galaxy + "/W" + wise_filter)
+            if not os.path.exists(galaxy + "/2MASS_" + two_mass_filter):
+                os.mkdir(galaxy + "/2MASS_" + two_mass_filter)
                 
             if 1 in steps:
 
@@ -99,11 +101,26 @@ def wise_button(
                 # since we want a radius use twice that.
     
                 mArchiveDownload(
-                    "WISE " + wise_filter,
+                    "2MASS " + two_mass_filter,
                     galaxy,
                     2 * radius.value,
-                    galaxy + "/W" + wise_filter,
+                    galaxy + "/2MASS_" + two_mass_filter,
                 )
+                
+                # We need to now convert these into magnitudes.
+                
+                two_mass_files = glob.glob(galaxy+'/2MASS_'+ two_mass_filter+'/*')
+                
+                for two_mass_file in two_mass_files:
+                    
+                    hdu = fits.open(two_mass_file)[0]
+                    magzp = hdu.header['MAGZP']
+                    
+                    hdu.data = magzp - 2.5*np.log10(hdu.data)
+                    
+                    fits.writeto(two_mass_file,
+                                 hdu.data,hdu.header,
+                                 overwrite=True)
                 
                 # Mosaic all these files together.
     
@@ -115,17 +132,17 @@ def wise_button(
                     2 * radius.value,
                     2 * radius.value,
                     galaxy + "/header.hdr",
-                    resolution=1.375,
+                    resolution=1,
                 )
     
                 tools.mosaic(
-                    galaxy + "/W" + wise_filter, 
+                    galaxy + "/2MASS_" + two_mass_filter, 
                     header=galaxy + "/header.hdr", 
                     **kwargs
                 )
     
                 os.rename("mosaic/mosaic.fits", 
-                          galaxy + "_W" + wise_filter + ".fits")
+                          galaxy + "_2MASS_" + two_mass_filter + ".fits")
     
                 # Clear out the mosaic folder.
     
@@ -138,22 +155,24 @@ def wise_button(
                     
                 # Convert to Jy.
             
-                convert_to_jy(galaxy + "_W" + wise_filter,
-                              wise_filter)
+                convert_to_jy(galaxy + "_2MASS_" + two_mass_filter,
+                              two_mass_filter)
             
-def convert_to_jy(hdu_in,wise_filter,save=True):
+def convert_to_jy(hdu_in,two_mass_filter,save=True):
     
-    """Convert from WISE DN to Jy/pixel.
+    """Convert from Vega magnitudes to Jy/pixel.
     
-    WISE maps are provided in convenience units of data numbers (DN). The
-    constants to convert them are given in Table 1 of
-    http://wise2.ipac.caltech.edu/docs/release/prelim/expsup/sec2_3f.html.
+    2MASS maps are provided in convenience units of data numbers (DN).
+    During the mosaicking process, these are converted to Vega mags
+    since the magnitude zero point varies between frames. The constants 
+    for converting magnitudes to Jy are given at
+    https://old.ipac.caltech.edu/2mass/releases/allsky/faq.html#jansky.
     
     Args:
-        hdu_in (str or astropy.io.fits.PrimaryHDU): File name of WISE 
+        hdu_in (str or astropy.io.fits.PrimaryHDU): File name of 2MASS 
             .fits file (excluding the .fits extension), or an Astropy 
             PrimaryHDU instance (i.e. the result of ``fits.open(file)[0]``).
-        wise_filter (str): Either '1', '2', '3', or '4'.
+        two_mass_filter (str): Either 'J', 'H', or 'K'.
         save (bool, optional): Save out the converted file. It'll save
             the original file with an appended '_jy'. Defaults to True.
         
@@ -170,14 +189,13 @@ def convert_to_jy(hdu_in,wise_filter,save=True):
     data = hdu.data.copy()
     header = hdu.header.copy()
     
-    # Convert from DN to Jy
+    # Convert from mag to Jy
         
-    dn_factor = {'1':1.935e-6,
-                 '2':2.7048e-6,
-                 '3':2.9045e-6,
-                 '4':5.2269e-5}[wise_filter]
+    f_0 = {'J':1594,
+           'H':1024,
+           'K':666.7}[two_mass_filter]
     
-    data *= dn_factor
+    data = f_0*10**(-0.4*data)
     
     header['BUNIT'] = 'Jy/pix'
     
