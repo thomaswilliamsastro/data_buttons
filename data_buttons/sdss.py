@@ -155,7 +155,7 @@ def convert_to_jy(hdu_in,sdss_filter,save=True):
             the original file with an appended '_jy'. Defaults to True.
         
     Returns:
-        hdu_pixel: The HDU in units of Jy/pix.
+        astropy.io.fits.PrimaryHDU: The HDU in units of Jy/pix.
     
     """
     

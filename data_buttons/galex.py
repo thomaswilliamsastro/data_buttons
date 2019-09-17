@@ -44,8 +44,7 @@ def galex_button(
             which GALEX filters to create a mosaic for. Defaults to
             'both'.
         radius (astropy.units.Quantity, optional): Radius around the 
-            galaxy to search for observations. Defaults to 0.2 degrees,
-            the same as Astroquery.
+            galaxy to search for observations. Defaults to 0.2 degrees.
         filepath (str, optional): Path to save the working and output
             files to. If not specified, saves to current working 
             directory.
