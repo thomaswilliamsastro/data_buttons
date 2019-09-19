@@ -1,3 +1,4 @@
 astropy
 astroquery
 MontagePy
+photutils

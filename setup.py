@@ -9,5 +9,5 @@ setup(
     author='Thomas Williams',
     author_email='thomas.g.williams94@gmail.com',
     description='Useful Catalogue Query/Mosaicking Tools',
-    install_requires=['astropy','numpy','astroquery','MontagePy']
+    install_requires=['astropy','numpy','astroquery','MontagePy','photutils']
 )
