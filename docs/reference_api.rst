@@ -29,6 +29,13 @@ WISE
 
 .. automodule:: data_buttons.wise
     :members:
+    
+***
+HST
+***
+
+.. automodule:: data_buttons.hst
+    :members:
 
 *****
 Tools

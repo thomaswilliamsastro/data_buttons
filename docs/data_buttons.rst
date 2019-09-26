@@ -28,15 +28,22 @@ Current capabilities
 ====================
 
 ``data_buttons`` currently works with GALEX (``data_buttons.galex``), 
-SDSS (``data_buttons.sdss``), 2MASS (``data_buttons.two_mass``), 
-and WISE ``data_buttons.wise`` data. In the case of GALEX, the mosaic 
-is weighted by the exposure time and will also produce an _exptime.fits 
-file. More telescopes and data coming soon!
+SDSS (``data_buttons.sdss``), 2MASS (``data_buttons.two_mass``),
+WISE ``data_buttons.wise``, and HST ``data_buttons.hst`` data. In the 
+case of GALEX, the mosaic is weighted by the exposure time and will also 
+produce an _exptime.fits file. More telescopes and data coming soon!
+
+.. warning::
+    I am not well-versed in HST data, and that module should be considered
+    in its infancy. It also only works for ACS/WFC data. Your mileage may 
+    vary, so be aware!
 
 ``data_buttons`` also offers a module with image-related tools 
 (``data_buttons.tools``). Currently, this allows you to create a mosaic
 of pre-downloaded files, without going through the whole Data Button.
-More useful tools coming soon!
+It also offers a tool to calculate the sigma-clipped background median
+of an image (for subtracting off a constant background), or a slightly
+fancier polynomial fitting tool. More useful tools coming soon!
 
 =======================================
 Example: Creating a GALEX Mosaic of M51

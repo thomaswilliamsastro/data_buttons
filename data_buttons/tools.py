@@ -15,7 +15,7 @@ from photutils import make_source_mask
 
 
 def mosaic(input_folder, header=None, output_folder="mosaic", background_match=True,
-           **kwargs):
+           verbose=False,**kwargs):
 
     """Mosaic together a folder full of .fits files.
     
@@ -34,9 +34,9 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
             Defaults to 'mosaic'.
         background_match (bool, optional): Whether to perform background
             matching steps while mosaicking. Defaults to True.
-            
-    Todo:
-        * Create verbose print statements, for debugging.
+        verbose (bool, optional): Print out verbose statements during
+            the mosaicking process. Useful for debugging. Defaults to
+            False.
             
     """
 
@@ -52,16 +52,19 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
 
     # Make an optimum header for these images
 
-    _ = mImgtbl(input_folder, output_folder + "/images.tbl")
+    mImgtbl(input_folder, output_folder + "/images.tbl")
 
     if header is None:
-        _ = mMakeHdr(output_folder + "/images.tbl", output_folder + "/header.hdr")
+        mMakeHdr(output_folder + "/images.tbl", output_folder + "/header.hdr")
     else:
         shutil.copy(header, output_folder + "/header.hdr")
 
     # Project the original images to this header
+    
+    if verbose:
+        print('Reprojecting images to optimum header')
 
-    _ = mProjExec(
+    mProjExec(
         input_folder,
         output_folder + "/images.tbl",
         output_folder + "/header.hdr",
@@ -69,31 +72,47 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
         quickMode=False,
     )
 
-    _ = mImgtbl(output_folder + "/projected", output_folder + "/images.tbl")
+    mImgtbl(output_folder + "/projected", output_folder + "/images.tbl")
 
     # If selected, perform background matching.
 
     if background_match:
-        _ = mOverlaps(output_folder + "/images.tbl", output_folder + "/diffs.tbl")
-        _ = mDiffFitExec(
+        
+        if verbose:
+            print('Calculating overlaps')
+        
+        mOverlaps(output_folder + "/images.tbl", output_folder + "/diffs.tbl")
+        
+        if verbose:
+            print('Fitting overlap differences')
+        
+        mDiffFitExec(
             output_folder + "/projected",
             output_folder + "/diffs.tbl",
             output_folder + "/header.hdr",
             output_folder + "/diffs",
             output_folder + "/fits.tbl",
         )
-        _ = mBgModel(
+        
+        if verbose:
+            print('Calulating corrections')
+        
+        mBgModel(
             output_folder + "/images.tbl",
             output_folder + "/fits.tbl",
             output_folder + "/corrections.tbl",
         )
-        _ = mBgExec(
+        
+        if verbose:
+            print('Matching backgrounds')
+        
+        mBgExec(
             output_folder + "/projected",
             output_folder + "/images.tbl",
             output_folder + "/corrections.tbl",
             output_folder + "/corrected",
         )
-        _ = mImgtbl(output_folder + "/corrected", output_folder + "/images.tbl")
+        mImgtbl(output_folder + "/corrected", output_folder + "/images.tbl")
 
     # Finally, coadd the images
 
@@ -101,8 +120,11 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
         folder = output_folder + "/projected"
     else:
         folder = output_folder + "/corrected"
+        
+    if verbose:
+        print('Co-adding images')
 
-    _ = mAdd(
+    mAdd(
         folder,
         output_folder + "/images.tbl",
         output_folder + "/header.hdr",
@@ -112,10 +134,10 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
 
     # Remove the temp folders we've made along the way
 
-    shutil.rmtree(output_folder + "/projected", ignore_errors=True)
-    if background_match:
-        shutil.rmtree(output_folder + "/diffs", ignore_errors=True)
-        shutil.rmtree(output_folder + "/corrected", ignore_errors=True)
+#     shutil.rmtree(output_folder + "/projected", ignore_errors=True)
+#     if background_match:
+#         shutil.rmtree(output_folder + "/diffs", ignore_errors=True)
+#         shutil.rmtree(output_folder + "/corrected", ignore_errors=True)
         
 def calculate_background_median(data,sigma=3,npixels=5,maxiters=20,
                                 **kwargs):

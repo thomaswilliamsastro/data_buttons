@@ -2,3 +2,7 @@ astropy
 astroquery
 MontagePy
 photutils
+astropy-helpers
+sphinx
+gitpython
+sphinx-astropy
