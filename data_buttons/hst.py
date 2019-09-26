@@ -338,11 +338,27 @@ def hst_button(
                         
                         pix_size = {'ACS/WFC':0.05}[instrument]
                          
-                        astrodrizzle.AstroDrizzle(input=hst_files,
+                        try:
+                            
+                            astrodrizzle.AstroDrizzle(input=hst_files,
+                                                      output='../outputs/'+galaxy,
+                                                      preserve=False,
+                                                      clean=True,
+                                                      skymethod='globalmin+match',
+                                                      driz_sep_bits='64,32',
+                                                      final_scale=pix_size,
+                                                      final_rot=0)
+                        except ValueError:
+                            
+                            # Occasionally, the median backgrounding will
+                            # fail. In this case, change to 'median' 
+                            # rather than 'minmed' and try again.
+                            
+                            astrodrizzle.AstroDrizzle(input=hst_files,
                                                   output='../outputs/'+galaxy,
                                                   preserve=False,
                                                   clean=True,
-                                                  skymethod='globalmin+match',
+                                                  combine_type='median',
                                                   driz_sep_bits='64,32',
                                                   final_scale=pix_size,
                                                   final_rot=0)

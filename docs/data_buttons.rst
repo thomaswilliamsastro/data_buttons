@@ -21,7 +21,11 @@ Installation
 
 * Navigate to the directory that contains ``setup.py``
 
-* Install using ``python setup.py install``
+* Install using
+.. code-block:: python
+
+	pip install -r requirements.txt
+	pip install -e .
 
 ====================
 Current capabilities
@@ -29,9 +33,10 @@ Current capabilities
 
 ``data_buttons`` currently works with GALEX (``data_buttons.galex``), 
 SDSS (``data_buttons.sdss``), 2MASS (``data_buttons.two_mass``),
-WISE ``data_buttons.wise``, and HST ``data_buttons.hst`` data. In the 
-case of GALEX, the mosaic is weighted by the exposure time and will also 
-produce an _exptime.fits file. More telescopes and data coming soon!
+WISE (``data_buttons.wise``), and HST (``data_buttons.hst``) data. In the 
+case of GALEX, the mosaic is weighted by the exposure time. For HST data,
+outputs are produced for each proposal ID. 
+More telescopes and data coming soon!
 
 .. warning::
     I am not well-versed in HST data, and that module should be considered
@@ -60,5 +65,5 @@ Using the Data Button\ :sup:`TM`\, we'll create a GALEX mosaic of the classic po
     galex.galex_button('M51')
 
 And that's all there is to it! The program will query the necessary databases, download the data and mosaic it for you.
-It'll put the final files (in this case, M51_GALEX_NUV_jy.fits and M51_GALEX_FUV_jy.fits), into the directory you specify 
+It'll put the final files (in this case, M51/GALEX/M51_NUV.fits and M51/GALEX/M51_FUV.fits), into the directory you specify 
 in the ``os.chdir()`` call.

@@ -134,10 +134,10 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
 
     # Remove the temp folders we've made along the way
 
-#     shutil.rmtree(output_folder + "/projected", ignore_errors=True)
-#     if background_match:
-#         shutil.rmtree(output_folder + "/diffs", ignore_errors=True)
-#         shutil.rmtree(output_folder + "/corrected", ignore_errors=True)
+    shutil.rmtree(output_folder + "/projected", ignore_errors=True)
+    if background_match:
+        shutil.rmtree(output_folder + "/diffs", ignore_errors=True)
+        shutil.rmtree(output_folder + "/corrected", ignore_errors=True)
         
 def calculate_background_median(data,sigma=3,npixels=5,maxiters=20,
                                 **kwargs):

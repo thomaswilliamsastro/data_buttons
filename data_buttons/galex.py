@@ -22,10 +22,10 @@ def galex_button(
     filters="both",
     radius=0.2 * u.degree,
     filepath=None,
+    download_data=True,
     create_mosaic=True,
     jy_conversion=True,
     verbose=False,
-    **kwargs
 ):
     """Create a GALEX mosaic, given a galaxy name.
     
@@ -48,6 +48,8 @@ def galex_button(
         filepath (str, optional): Path to save the working and output
             files to. If not specified, saves to current working 
             directory.
+        download_data (bool, optional): If True, will download data from 
+            MAST. Defaults to True.
         create_mosaic (bool, optional): Switching this to True will 
             download data and mosaic as appropriate. You may wish to set
             this to False if you've already downloaded the data previously.
@@ -57,8 +59,6 @@ def galex_button(
         verbose (bool, optional): Print out messages during the process.
             Useful mainly for debugging purposes or large images. 
             Defaults to False.
-            
-    Todo:
     
     """
 
@@ -76,10 +76,12 @@ def galex_button(
         
     steps = []
     
-    if create_mosaic:
+    if download_data:
         steps.append(1)
-    if jy_conversion:
+    if create_mosaic:
         steps.append(2)
+    if jy_conversion:
+        steps.append(3)
 
     for galaxy in galaxies:
         
@@ -114,15 +116,14 @@ def galex_button(
                 
                 if not verbose:
                     sys.stdout = open(os.devnull,'w')
-    
-                for query_result in query_results:
-                    dataProductsByID = Observations.get_product_list(
-                        obs_table[query_result]
-                    )
                     
-                    _ = Observations.download_products(
-                        dataProductsByID, download_dir="galex_temp/" + galaxy, mrp_only=True,
-                    )
+                dataProductsByID = Observations.get_product_list(
+                    obs_table[query_results]
+                )
+                  
+                _ = Observations.download_products(
+                    dataProductsByID, download_dir="galex_temp/" + galaxy, mrp_only=True,
+                )
                     
                 # And set back to the original for printing.
                 
@@ -130,19 +131,21 @@ def galex_button(
                     
                     sys.stdout = sys.__stdout__
 
-                if not os.path.exists(galaxy + "/GALEX_" + galex_filter):
-                    os.mkdir(galaxy + "/GALEX_" + galex_filter)
-                if not os.path.exists(galaxy + "/GALEX_" + galex_filter+'/exptime'):
-                    os.mkdir(galaxy + "/GALEX_" + galex_filter+'/exptime')
-                if not os.path.exists(galaxy + "/GALEX_" + galex_filter+'/data'):
-                    os.mkdir(galaxy + "/GALEX_" + galex_filter+'/data')
+                if not os.path.exists(galaxy + "/GALEX/"):
+                    os.mkdir(galaxy + "/GALEX/")
+                if not os.path.exists(galaxy + "/GALEX/" + galex_filter):
+                    os.mkdir(galaxy + "/GALEX/" + galex_filter)
+                if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/raw'):
+                    os.mkdir(galaxy + "/GALEX/" + galex_filter+'/raw')
+                if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/data'):
+                    os.mkdir(galaxy + "/GALEX/" + galex_filter+'/data')
+                if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/exptime'):
+                    os.mkdir(galaxy + "/GALEX/" + galex_filter+'/exptime')
 
                 ext_name = {"NUV": "nd", "FUV": "fd"}[galex_filter]
 
                 # Pull out the relevant filter files files (either *nd*
                 # or *fd*), extract and move to base folder.
-
-                filename_ext = 0
 
                 matches = []
                 for root, _, filenames in os.walk("galex_temp/" + galaxy):
@@ -151,33 +154,36 @@ def galex_button(
                     ):
                         matches.append(os.path.join(root, filename))
 
-                filename_ext = 0
-
                 for match in matches:
                     with gzip.open(match, "rb") as f_in:
                         with open(match[:-3], "wb") as f_out:
                             shutil.copyfileobj(f_in, f_out)
 
+                    filename = match[:-3].split('/')
+                    
+                    print(match)
+
                     os.rename(
                         match[:-3],
                         galaxy
-                        + "/GALEX_"
+                        + "/GALEX/"
                         + galex_filter
-                        + "/data/"
-                        + galaxy
-                        + "_"
-                        + str(filename_ext)
-                        + ".fits",
+                        + "/raw/"
+                        + filename[-1],
                     )
+                    
+                # Clean up any temporary files.
 
-                    filename_ext += 1
+                shutil.rmtree("galex_temp/" + galaxy, ignore_errors=True)
+                    
+            if 2 in steps:
 
                 # Read in these files and set anything more than 35
                 # arcmin out to NaN. At the same time, convert from 
                 # counts/s to raw counts so it's properly weighted in
                 # the coadd later.
 
-                galex_files = glob.glob(galaxy + "/GALEX_" + galex_filter + "/data/*")
+                galex_files = glob.glob(galaxy + "/GALEX/" + galex_filter + "/raw/*")
 
                 for galex_file in galex_files:
                     hdu = fits.open(galex_file)[0]
@@ -196,13 +202,15 @@ def galex_button(
                     hdu.data[r >= 1400 ** 2] = np.nan
                     
                     hdu.data *= hdu.header['EXPTIME']
+                    
+                    galex_filepath = galex_file.split('/raw/')
+                    data_file = galex_filepath[0]+'/data/'+galex_filepath[1]
 
-                    fits.writeto(galex_file, hdu.data, hdu.header, overwrite=True)
+                    fits.writeto(data_file, hdu.data, hdu.header, overwrite=True)
                     
                     # Also create a map of exposure time
                     
-                    exp_file = galex_file.split('/data/')
-                    exp_file = exp_file[0]+'/exptime/'+exp_file[1]
+                    exp_file = galex_filepath[0]+'/exptime/'+galex_filepath[1]
                     
                     exposure_time = np.ones(hdu.data.shape)*hdu.header['EXPTIME']
                     exposure_time[np.isnan(hdu.data) == True] = np.nan
@@ -217,60 +225,57 @@ def galex_button(
                     galaxy,
                     2 * radius.value,
                     2 * radius.value,
-                    galaxy + "/header.hdr",
+                    galaxy + "/GALEX/header.hdr",
                     resolution=1.5,
                 )
 
                 tools.mosaic(
-                    galaxy + "/GALEX_" + galex_filter+'/data',
-                    header=galaxy + "/header.hdr",
+                    galaxy + "/GALEX/" + galex_filter+'/data',
+                    header=galaxy + "/GALEX/header.hdr",
                     coadd=3
                 )
                 
                 os.rename(
                     "mosaic/mosaic.fits", 
-                    galaxy + "_GALEX_" + galex_filter + ".fits"
+                    galaxy + "/GALEX/" + galex_filter +'/'+galaxy+".fits"
                 )
 
                 tools.mosaic(
-                    galaxy + "/GALEX_" + galex_filter + "/exptime",
-                    header=galaxy + "/header.hdr",
+                    galaxy + "/GALEX/" + galex_filter + "/exptime",
+                    header=galaxy + "/GALEX/header.hdr",
                     coadd=3
                 )
 
                 os.rename(
                     "mosaic/mosaic.fits", 
-                    galaxy + "_GALEX_" + galex_filter + "_exptime.fits"
+                    galaxy + "/GALEX/" + galex_filter +'/'+galaxy+"_exptime.fits"
                 )
 
                 shutil.rmtree("mosaic/", ignore_errors=True)
                     
                 # Convert back to counts/sec
                 
-                hdu = fits.open(galaxy + "_GALEX_" + galex_filter + ".fits")[0]
-                hdu_exp = fits.open(galaxy + "_GALEX_" + galex_filter + "_exptime.fits")[0]
+                hdu = fits.open(galaxy + "/GALEX/" + galex_filter +'/'+galaxy+".fits")[0]
+                hdu_exp = fits.open(galaxy + "/GALEX/" + galex_filter +'/'+galaxy+"_exptime.fits")[0]
                 
                 hdu.data /= hdu_exp.data
                 
-                fits.writeto(galaxy + "_GALEX_" + galex_filter + ".fits",
+                fits.writeto(galaxy + "/GALEX/" + galex_filter +'/'+galaxy+"_cts.fits",
                              hdu.data,hdu.header,
                              overwrite=True)
                     
-            if 2 in steps:
+            if 3 in steps:
                 
                 if verbose:
                     print('Converting to Jy')
                 
                 # Convert to Jy.
                 
-                convert_to_jy(galaxy + "_GALEX_" + galex_filter,
-                              galex_filter)
-
-            # Clean up any temporary files.
-    
-            shutil.rmtree("galex_temp/" + galaxy, ignore_errors=True)
+                convert_to_jy(galaxy + "/GALEX/" + galex_filter +'/'+galaxy+"_cts.fits",
+                              galex_filter,
+                              hdu_out=galaxy + "/GALEX/"+galaxy+'_' + galex_filter + ".fits")
         
-def convert_to_jy(hdu_in,galex_filter,save=True):
+def convert_to_jy(hdu_in,galex_filter,hdu_out=None):
     
     """Convert from GALEX counts/s to Jy/pixel.
     
@@ -292,7 +297,7 @@ def convert_to_jy(hdu_in,galex_filter,save=True):
     """
     
     if isinstance(hdu_in,str):
-        hdu = fits.open(hdu_in+'.fits')[0]
+        hdu = fits.open(hdu_in)[0]
     else:
         hdu = hdu_in.copy()
     
@@ -307,8 +312,8 @@ def convert_to_jy(hdu_in,galex_filter,save=True):
     data *= conversion_factor
     header['BUNIT'] = 'Jy/pix'
     
-    if save:
-        fits.writeto(hdu_in+'_jy.fits',
+    if hdu_out is not None:
+        fits.writeto(hdu_out,
                      data,header,
                      overwrite=True)
         

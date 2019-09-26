@@ -17,7 +17,11 @@ Installation
 
 * Navigate to the directory that contains ``setup.py``
 
-* Install using ``python setup.py install``
+* Install using 
+.. code-block:: python
+
+	pip install -r requirements.txt
+	pip install -e .
 
 =============
 Documentation
@@ -26,7 +30,7 @@ Documentation
 .. code-block:: python
 
     import os
-    from data_button import galex
+    from data_buttons import galex
 
     os.chdir('directory')
     galex.galex_button('M51')
