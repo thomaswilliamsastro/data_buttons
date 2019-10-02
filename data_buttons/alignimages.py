@@ -717,8 +717,7 @@ def match_relative_fit(imglist, reference_catalog):
 
     # Align images and correct WCS
     # NOTE: this invocation does not use an astrometric catalog. This call allows all the input images to be aligned in
-    # a relative way using the optimum image alignment order. 
-    # THIS IS THE ONLY DIFFERENCE I'VE ADDED TO THIS CODE.
+    # a relative way using the optimum image alignment order.
     # 1: Perform relative alignment
     tweakwcs.align_wcs(imglist, None, match=match, expand_refcat=True, enforce_user_order=False)
 

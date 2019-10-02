@@ -21,11 +21,7 @@ Installation
 
 * Navigate to the directory that contains ``setup.py``
 
-* Install using
-.. code-block:: python
-
-	pip install -r requirements.txt
-	pip install -e .
+* Install using ``pip install -r requirements.txt -e .``
 
 ====================
 Current capabilities
@@ -40,8 +36,7 @@ More telescopes and data coming soon!
 
 .. warning::
     I am not well-versed in HST data, and that module should be considered
-    in its infancy. It also only works for ACS/WFC data. Your mileage may 
-    vary, so be aware!
+    in its infancy. Your mileage may vary, so be aware!
 
 ``data_buttons`` also offers a module with image-related tools 
 (``data_buttons.tools``). Currently, this allows you to create a mosaic

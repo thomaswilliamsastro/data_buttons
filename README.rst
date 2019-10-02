@@ -17,11 +17,7 @@ Installation
 
 * Navigate to the directory that contains ``setup.py``
 
-* Install using 
-.. code-block:: python
-
-	pip install -r requirements.txt
-	pip install -e .
+* Install using ``pip install -r requirements.txt -e .``
 
 =============
 Documentation
