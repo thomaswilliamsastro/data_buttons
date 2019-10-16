@@ -51,9 +51,7 @@ def galex_button(
         download_data (bool, optional): If True, will download data from 
             MAST. Defaults to True.
         create_mosaic (bool, optional): Switching this to True will 
-            download data and mosaic as appropriate. You may wish to set
-            this to False if you've already downloaded the data previously.
-            Defaults to True.
+            mosaic data as appropriate. Defaults to True.
         jy_conversion (bool, optional): Convert the mosaicked file from
             raw units to Jy/pix. Defaults to True.
         verbose (bool, optional): Print out messages during the process.
@@ -119,11 +117,11 @@ def galex_button(
                     
                 dataProductsByID = Observations.get_product_list(
                     obs_table[query_results]
-                )
+                    )
                   
-                _ = Observations.download_products(
+                Observations.download_products(
                     dataProductsByID, download_dir="galex_temp/" + galaxy, mrp_only=True,
-                )
+                    )
                     
                 # And set back to the original for printing.
                 
@@ -141,6 +139,8 @@ def galex_button(
                     os.mkdir(galaxy + "/GALEX/" + galex_filter+'/data')
                 if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/exptime'):
                     os.mkdir(galaxy + "/GALEX/" + galex_filter+'/exptime')
+                if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/outputs'):
+                    os.mkdir(galaxy + "/GALEX/" + galex_filter+'/outputs')
 
                 ext_name = {"NUV": "nd", "FUV": "fd"}[galex_filter]
 
@@ -160,8 +160,6 @@ def galex_button(
                             shutil.copyfileobj(f_in, f_out)
 
                     filename = match[:-3].split('/')
-                    
-                    print(match)
 
                     os.rename(
                         match[:-3],
@@ -221,46 +219,48 @@ def galex_button(
                 # Montage uses its size as the length of the square,
                 # since we want a radius use twice that.
 
-                _ = mHdr(
+                mHdr(
                     galaxy,
                     2 * radius.value,
                     2 * radius.value,
-                    galaxy + "/GALEX/header.hdr",
+                    galaxy + "/GALEX/"+galex_filter+"/outputs/header.hdr",
                     resolution=1.5,
-                )
+                    )
 
                 tools.mosaic(
                     galaxy + "/GALEX/" + galex_filter+'/data',
-                    header=galaxy + "/GALEX/header.hdr",
+                    header=galaxy+"/GALEX/"+galex_filter+"/outputs/header.hdr",
+                    verbose=verbose,
                     coadd=3
-                )
+                    )
                 
                 os.rename(
                     "mosaic/mosaic.fits", 
-                    galaxy + "/GALEX/" + galex_filter +'/'+galaxy+".fits"
-                )
+                    galaxy + "/GALEX/"+galex_filter+"/outputs/"+galaxy+'_data.fits'
+                    )
 
                 tools.mosaic(
                     galaxy + "/GALEX/" + galex_filter + "/exptime",
-                    header=galaxy + "/GALEX/header.hdr",
+                    header=galaxy+"/GALEX/"+galex_filter+"/outputs/header.hdr",
+                    verbose=verbose,
                     coadd=3
-                )
+                    )
 
                 os.rename(
                     "mosaic/mosaic.fits", 
-                    galaxy + "/GALEX/" + galex_filter +'/'+galaxy+"_exptime.fits"
-                )
+                    galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+"_exptime.fits"
+                    )
 
                 shutil.rmtree("mosaic/", ignore_errors=True)
                     
                 # Convert back to counts/sec
                 
-                hdu = fits.open(galaxy + "/GALEX/" + galex_filter +'/'+galaxy+".fits")[0]
-                hdu_exp = fits.open(galaxy + "/GALEX/" + galex_filter +'/'+galaxy+"_exptime.fits")[0]
+                hdu = fits.open(galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+"_data.fits")[0]
+                hdu_exp = fits.open(galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+"_exptime.fits")[0]
                 
                 hdu.data /= hdu_exp.data
                 
-                fits.writeto(galaxy + "/GALEX/" + galex_filter +'/'+galaxy+"_cts.fits",
+                fits.writeto(galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+".fits",
                              hdu.data,hdu.header,
                              overwrite=True)
                     
@@ -271,7 +271,7 @@ def galex_button(
                 
                 # Convert to Jy.
                 
-                convert_to_jy(galaxy + "/GALEX/" + galex_filter +'/'+galaxy+"_cts.fits",
+                convert_to_jy(galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+".fits",
                               galex_filter,
                               hdu_out=galaxy + "/GALEX/"+galaxy+'_' + galex_filter + ".fits")
         
@@ -285,11 +285,11 @@ def convert_to_jy(hdu_in,galex_filter,hdu_out=None):
     
     Args:
         hdu_in (str or astropy.io.fits.PrimaryHDU): File name of GALEX 
-            .fits file (excluding the .fits extension), or an Astropy 
-            PrimaryHDU instance (i.e. the result of ``fits.open(file)[0]``).
+            .fits file, or an Astropy PrimaryHDU instance (i.e. the result 
+            of ``fits.open(file)[0]``).
         galex_filter (str): Either 'NUV' or 'FUV'.
-        save (bool, optional): Save out the converted file. It'll save
-            the original file with an appended '_jy'. Defaults to True.
+        hdu_out (str, optional): If not None, will save the converted HDU
+            out with this filename. Defaults to None.
         
     Returns:
         astropy.io.fits.PrimaryHDU: The HDU in units of Jy/pix.

@@ -7,6 +7,7 @@ import os
 import shutil
 import multiprocessing as mp
 import logging
+import resource
 
 import astropy.units as u
 import numpy as np
@@ -14,15 +15,17 @@ from astropy.io import fits
 from astropy.table import Table
 from astroquery.mast import Observations
 from astroquery.gaia import Gaia
-from drizzlepac import astrodrizzle, photeq, tweakreg
+from drizzlepac import astrodrizzle, photeq, tweakreg, tweakback
 import stwcs
 import crds
 import pickle
+import wget
 
 from . import alignimages
 
 def hst_button(
     galaxies,
+    skymethod='globalmin+match',
     instruments="ACS/WFC",
     prop_ids=None,
     filters=None,
@@ -55,6 +58,13 @@ def hst_button(
     Args:
         galaxies (str or list): Names of galaxies to create mosaics for.
             Resolved by NED.
+        skymethod (str, optional): Method used for AstroDrizzle's background
+            matching step. In general, this can be left untouched but for
+            mosaics with little overlap, it may be worth playing around 
+            with this. For instance, I've had some luck when there isn't
+            much overlap between exposures using 'globalmin'. Options are 
+            'localmin', 'globalmin+match', 'globalmin', and 'match'. Defaults 
+            to 'globalmin+match'.
         instruments (str or list, optional): Instrument to download data 
             for.  Can be any combination of 'ACS/WFC', 'WFC3/IR', 
             'WFC3/UVIS', 'WFPC2/PC', or 'WFPC2/WFC'. If you want all 
@@ -110,9 +120,8 @@ def hst_button(
 
     if filepath is not None:
         os.chdir(filepath)
-        orig_dir = filepath
-    else:
-        orig_dir = os.getcwd()
+        
+    orig_dir = os.getcwd()
         
     steps = []
     
@@ -128,10 +137,25 @@ def hst_button(
     # Set up folders for various corrections
     
     os.environ['CRDS_SERVER_URL'] = 'https://hst-crds.stsci.edu'
-    os.environ['CRDS_PATH'] = 'reference_files'
-    os.environ['iref'] = 'reference_files/references/hst/wfc3/'
-    os.environ['jref'] = 'reference_files/references/hst/acs/'
-    os.environ['uref'] = 'reference_files/references/hst/wfpc2/'
+    os.environ['CRDS_PATH'] = orig_dir+'/reference_files'
+    os.environ['iref'] = orig_dir+'/reference_files/references/hst/wfc3/'
+    os.environ['jref'] = orig_dir+'/reference_files/references/hst/acs/'
+    os.environ['uref'] = orig_dir+'/reference_files/references/hst/wfpc2/'
+    
+    # For large proposals, astrodrizzle can run into file open
+    # issues so raise the max file open amount.
+    
+    _, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE,(hard,hard))
+    
+    # Change the temp directory -- if this gets filled up it can cause
+    # problems.
+    
+    orig_tmpdir = os.environ['TMPDIR']
+    
+    if not os.path.exists('tmp'):
+        os.mkdir('tmp')
+    os.environ['TMPDIR'] = orig_dir+'/tmp'
         
     for galaxy in galaxies:
         
@@ -152,10 +176,10 @@ def hst_button(
         # Even if verbose is not True, still print out some useful messages to the 
         # console.
         
-        logging.basicConfig(filemode='w')
         hst_logger = logging.getLogger('data_buttons')
-        handler = logging.FileHandler(galaxy+'/'+log_filename)
+        handler = logging.FileHandler(galaxy+'/'+log_filename,mode='w')
         hst_logger.addHandler(handler)
+        hst_logger.addHandler(logging.StreamHandler())
         hst_logger.setLevel(logging.INFO)
         hst_logger.info('Beginning '+galaxy)
         hst_logger.info(' ')
@@ -179,18 +203,31 @@ def hst_button(
                         'NICMOS/NIC1':0.025,
                         'NICMOS/NIC2':0.05,
                         'NICMOS/NIC3':0.1,
-                        'WFC3/IR':0.04,
-                        'WFC3/UVIS':0.09,
+                        'WFC3/IR':0.09,
+                        'WFC3/UVIS':0.04,
                         'WFPC2/PC':0.05,
                         'WFPC2/WFC':0.1}[instrument]
+                        
+            # Bits to consider good for drizzling.
+            
+            bits = {'ACS/HRC':256,
+                    'ACS/SBC':256,
+                    'ACS/WFC':256,
+                    'NICMOS/NIC1':0,
+                    'NICMOS/NIC2':0,
+                    'NICMOS/NIC3':0,
+                    'WFC3/IR':768,
+                    'WFC3/UVIS':256,
+                    'WFPC2/PC':'8,1024',
+                    'WFPC2/WFC':'8,1024'}[instrument]
                         
             # Filename extension, in order of preference.
             
             suffixes = {'ACS/WFC':['FLC','FLT'],
                         'WFC3/IR':['FLT'],
                         'WFC3/UVIS':['FLC','FLT'],
-                        'WFPC2/PC':['C0M'],
-                        'WFPC2/WFC':['C0M'],
+                        'WFPC2/PC':[['C0M','C1M']],
+                        'WFPC2/WFC':[['C0M','C1M']],
                         }[instrument]
             
             # The instruments often have / in the name, so account for 
@@ -256,7 +293,10 @@ def hst_button(
                         if len(download_table) > 0:
                             break
                         
-                    filename_ext = suffix.lower()
+                    if isinstance(suffix,list):
+                        filename_exts = [ext.lower() for ext in suffix]
+                    else:
+                        filename_exts = [suffix.lower()]
                     
                     hst_logger.info(instrument+'/'+prop_id+'/'+hst_filter)
                         
@@ -298,23 +338,27 @@ def hst_button(
                             os.mkdir(full_filepath+'/outputs')    
                                     
                         # Pull out the relevant files, and move to base folder.
+                        
+                        for filename_ext in filename_exts:
                 
-                        matches = []
-                        for root, _, filenames in os.walk("hst_temp/" + galaxy):
-                            for filename in fnmatch.filter(
-                                filenames, "*_"+filename_ext+".fits"
-                            ):
-                                matches.append(os.path.join(root, filename))
-                
-                        for match in matches:
-                            
-                            filename = match.split('/')
-                
-                            os.rename(match,full_filepath+'/raw/'+filename[-1])
+                            matches = []
+                            for root, _, filenames in os.walk("hst_temp/" + galaxy):
+                                for filename in fnmatch.filter(
+                                    filenames, "*_"+filename_ext+".fits"
+                                ):
+                                    matches.append(os.path.join(root, filename))
+                    
+                            for match in matches:
+                                
+                                filename = match.split('/')
+                    
+                                os.rename(match,full_filepath+'/raw/'+filename[-1])
                             
                         # Clean up any temporary files.
         
                         shutil.rmtree("hst_temp/" + galaxy, ignore_errors=True)
+                        
+                    filename_ext = filename_exts[0]
                         
                     hst_files = glob.glob(full_filepath+'/raw/*_'+filename_ext+'.fits')
                         
@@ -322,16 +366,47 @@ def hst_button(
                             
                         # First, update the WCS information in case it's 
                         # required.
-                           
-                        crds.assign_bestrefs(hst_files,
-                                             sync_references=True)
-            
-                        for hst_file in hst_files:
-                         
-                            stwcs.updatewcs.updatewcs(hst_file,
-                                                      use_db=False)
+                        
+                        for filename_ext in filename_exts:
+                             
+                            hst_files = glob.glob(full_filepath+'/raw/*_'+filename_ext+'.fits')
+                            
+                            crds.assign_bestrefs(hst_files,
+                                                 sync_references=True)
+                            
+                            # For WFPC2, the CRDS doesn't download everything
+                            # needed. Download the GEIS data files and
+                            # rerun the bestrefs assignment.
+                            
+                            if 'WFPC2' in instrument:
+                                 
+                                geis_hdrs = glob.glob(os.environ['uref']+'/*h')
+                                 
+                                for geis_hdr in geis_hdrs:
+                                     
+                                    geis_data = geis_hdr[:-1]+'d'
+                                     
+                                    if not os.path.exists(geis_data):
+                                         
+                                        geis_data = geis_data.split('/')[-1]
+                                         
+                                        print(geis_data)
+                                        print(os.environ['uref'])
+                                         
+                                        wget.download(
+                                            os.environ['CRDS_SERVER_URL']+'/unchecked_get/references/hst/'+geis_data,
+                                            out=os.environ['uref'])
+                                         
+                                crds.assign_bestrefs(hst_files,sync_references=True)
+                 
+                            for hst_file in hst_files:
+                              
+                                stwcs.updatewcs.updatewcs(hst_file,
+                                                          use_db=False)
                             
                         os.chdir(full_filepath+'/raw')
+                        
+                        filename_ext = filename_exts[0]
                             
                         hst_files = glob.glob('*_'+filename_ext+'.fits')
                         
@@ -345,11 +420,10 @@ def hst_button(
                             # Using tweakreg, align each frame to GAIA.
                             
                             gaia_table = Gaia.query_object_async(coordinate=galaxy, 
-                                      
                                                                  radius=2*radius)
                             ras = gaia_table['ra']
                             decs = gaia_table['dec']
-                            
+                             
                             source_table = Table([ras,decs])
                             source_table.write('gaia.cat',
                                                format='ascii.fast_commented_header')
@@ -372,6 +446,17 @@ def hst_button(
                                               clean=True,
                                               see2dplot=False
                                               )
+                            
+                            # Update the c1m files to use the TWEAK
+                            # wcs
+                            
+                            for hst_file in hst_files:
+                                
+                                dq_file = hst_file.replace('c0','c1')
+                                
+                                tweakback.tweakback(hst_file,
+                                                    dq_file,
+                                                    newname='TWEAK')
                             
                             plot_files = glob.glob('*.png')
                             for plot_file in plot_files:
@@ -454,44 +539,92 @@ def hst_button(
                         else:
                             
                             raise Exception('Unknown instrument!')
+                        
+                        # Following Dalcanton+ (2012), group exposures into
+                        # long (>50s) and short (<=50s), and process for cosmic
+                        # rays separately
+                        
+                        exp_times = []
+                        
+                        for hst_file in hst_files:
+                            
+                            hdu = fits.open(hst_file)[0]
+                            exp_time = hdu.header['EXPTIME']
+                            exp_times.append(exp_time)
+                            
+                        for exp_group in ['short','long']:
+                            
+                            hst_files_group = []
+                            
+                            for i in range(len(exp_times)):
+                            
+                                if exp_times[i] > 50 and exp_group == 'long':
+                                    hst_files_group.append(hst_files[i])
+                                elif exp_times[i] <= 50 and exp_group == 'short':
+                                    hst_files_group.append(hst_files[i])
+                                    
+                            if len(hst_files_group) == len(hst_files):
+                                
+                                exp_group = ''
+                                
+                            if len(hst_files_group) == 0:
+                                continue
+                                
+                            if len(exp_group) > 0:
+                                
+                                output_name = '../outputs/'+galaxy+'_'+exp_group
+                                drizzle_log_name = '../outputs/astrodrizzle_'+exp_group+'.log'
+                                
+                            else:
+                                
+                                output_name = '../outputs/'+galaxy
+                                drizzle_log_name = '../outputs/astrodrizzle.log'
         
-                        # Perform the mosaicking.
-                        
-                        #if 'WFPC2' in instrument:
-                        #    combine_type = 'median'
-                        #elif 'ACS' in instrument:
-                        #    combine_type = 'minmed'
-
-                        # Combination types, in order of preference.
-                        # Sometimes minmed will fail.
-
-                        combine_types = ['minmed','median']
-                        
-                        for combine_type in combine_types:
-                         
-                            try:
-                                
-                                astrodrizzle.AstroDrizzle(input=hst_files,
-                                                          output='../outputs/'+galaxy,
-                                                          preserve=False,
-                                                          clean=True,
-                                                          combine_type=combine_type,
-                                                          skymethod='globalmin+match',
-                                                          driz_sep_bits='64,32',
-                                                          final_scale=pix_size,
-                                                          wcskey=wcskey,
-                                                          final_rot=0)
-                                
-                                break
-                                
-                            except ValueError:
+                            # Perform the mosaicking. Generally, use iminmed.
+                            # However, sometimes iminmed will fail so
+                            # for the other instruments we'll use imedian as
+                            # a fallback.
+    
+                            combine_types = ['iminmed','imedian']
                             
-                                pass
+                            if 'WFPC2' in instrument:
+                                combine_nhigh = 1
+                            else:
+                                combine_nhigh = 0
                             
-                        # Move the AstroDrizzle log.
-                        
-                        os.rename('astrodrizzle.log',
-                                  '../outputs/astrodrizzle.log')
+                            for combine_type in combine_types:
+                             
+                                try:
+                                    
+                                    astrodrizzle.AstroDrizzle(
+                                        input=hst_files_group,
+                                        output=output_name,
+                                        preserve=False,
+                                        clean=True,
+                                        combine_type=combine_type,
+                                        combine_nhigh=combine_nhigh,
+                                        skymethod=skymethod,
+                                        sky_bits=bits,
+                                        driz_sep_bits=bits,
+                                        driz_sep_fillval=99999,
+                                        combine_hthresh=90000,
+                                        final_scale=pix_size,
+                                        final_bits=bits,
+                                        final_fillval=0,
+                                        wcskey=wcskey,
+                                        final_rot=0,
+                                        )
+                                    
+                                    break
+                                    
+                                except ValueError:
+                                
+                                    pass
+                                
+                            # Move the AstroDrizzle log.
+                            
+                            os.rename('astrodrizzle.log',
+                                      drizzle_log_name)
                             
                     # Move back to the original directory.
                         
@@ -499,33 +632,67 @@ def hst_button(
                     
                     if 4 in steps:
                         
-                        # Mosaic outputs, in order of preference.
-                        
-                        drizzle_exts = ['drc','drz']
+                        mosaic_outputs = glob.glob(full_filepath+'/outputs/*_sci.fits')
                          
-                        for drizzle_ext in drizzle_exts:
-                         
-                            try:
+                        for mosaic_output in mosaic_outputs:
+                            
+                            # Replace any fillvals with NaNs.
+                            
+                            hdu = fits.open(mosaic_output)[0]
+                            hdu.data[hdu.data == 0] = np.nan
+                            
+                            fits.writeto(mosaic_output,
+                                         hdu.data,hdu.header,
+                                         overwrite=True)
+                            
+                            if '_long_' in mosaic_output.split('/')[-1]:
                                 
-                                convert_to_jy(full_filepath+'/outputs/'+galaxy+'_'+drizzle_ext+'_sci.fits',
-                                              galaxy+
-                                              '/HST/'
-                                              +prop_id
-                                              +'/'
-                                              +galaxy
-                                              +'_'
-                                              +instrument.replace('/','_')
-                                              +'_'
-                                              +hst_filter
-                                              +'_'
-                                              +prop_id
-                                              +'.fits')
+                                new_filename = (galaxy+
+                                            '/HST/'
+                                            +prop_id
+                                            +'/'
+                                            +galaxy
+                                            +'_'
+                                            +instrument.replace('/','_')
+                                            +'_'
+                                            +hst_filter
+                                            +'_'
+                                            +prop_id
+                                            +'_long.fits')
                                 
-                                break
+                            elif '_short_' in mosaic_output.split('/')[-1]:
                                 
-                            except IOError:
+                                new_filename = (galaxy+
+                                            '/HST/'
+                                            +prop_id
+                                            +'/'
+                                            +galaxy
+                                            +'_'
+                                            +instrument.replace('/','_')
+                                            +'_'
+                                            +hst_filter
+                                            +'_'
+                                            +prop_id
+                                            +'_short.fits')
                                 
-                                pass
+                            else:
+                                
+                                new_filename = (galaxy+
+                                            '/HST/'
+                                            +prop_id
+                                            +'/'
+                                            +galaxy
+                                            +'_'
+                                            +instrument.replace('/','_')
+                                            +'_'
+                                            +hst_filter
+                                            +'_'
+                                            +prop_id
+                                            +'.fits')
+                                
+                                
+                            convert_to_jy(mosaic_output,
+                                          new_filename)
                             
                 if reset_filters:
                     filters = None
@@ -536,6 +703,11 @@ def hst_button(
                 prop_ids = None
                 
             hst_logger.info(' ')
+            
+    # Clear out the tmp folder and reset to the original.
+    
+    shutil.rmtree('tmp/', ignore_errors=True)
+    os.environ['TMPDIR'] = orig_tmpdir
                     
 def download_mast(obs_table,**kwargs):
     
@@ -606,7 +778,6 @@ def astrometric_correction(filename):
         # set can cause issues.
         
         if output_table['fit_qual'] < 5 and output_table['foundSources'] > 0:
-#             1 <= 
             return filename
         
     else:                           

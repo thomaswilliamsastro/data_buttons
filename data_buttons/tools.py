@@ -8,7 +8,9 @@ import warnings
 import numpy as np
 from astropy.io import fits
 from astropy.modeling import models, fitting
+from astropy.nddata.utils import Cutout2D
 from astropy.stats import sigma_clipped_stats
+from astropy.wcs import WCS
 from MontagePy.archive import *
 from MontagePy.main import *
 from photutils import make_source_mask
@@ -139,8 +141,8 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
         shutil.rmtree(output_folder + "/diffs", ignore_errors=True)
         shutil.rmtree(output_folder + "/corrected", ignore_errors=True)
         
-def calculate_background_median(data,sigma=3,npixels=5,maxiters=20,
-                                **kwargs):
+def background_median(data,sigma=3,npixels=5,maxiters=20,
+                      **kwargs):
     
     """Calculate background median for data.
     
@@ -244,3 +246,57 @@ def model_background(data,poly_order=5,sigma=2,npixels=5,
     background = p(x,y)
     
     return background
+
+def optimize_size(hdu,hdu_out=None):
+    
+    """Optimize the size of a .fits image.
+    
+    Calculate the minimum size for an image, updating the HDU at the 
+    end. This is useful for images out of mosaicking tools, where there
+    might be a number of NaNs artificially inflating the filesize.
+    
+    Args:
+        hdu (str or astropy.io.fits.PrimaryHDU): Data to optimize size of. 
+            If this is a string, this is interpreted as a filename for a 
+            .fits HDU.
+        hdu_out (str, optional): Filename for output trimmed .fits file.
+            Defaults to None, which will save nothing.
+            
+    Returns:
+        astropy.io.fits.ImageHDU: The size-optimized HDU.
+            
+    """
+    
+    if isinstance(hdu,str):
+        hdu = fits.open(hdu)[0]
+        data = hdu.data
+
+    wcs = WCS(hdu.header)
+        
+    x, y = np.meshgrid(range(data.shape[1]),
+                       range(data.shape[0]))
+    
+    idx = np.where(np.isnan(data) == False)
+    
+    ymin,ymax = np.min(y[idx]),np.max(y[idx])
+    xmin,xmax = np.min(x[idx]),np.max(x[idx])
+    
+    ymid = (ymin+ymax)/2
+    xmid = (xmin+xmax)/2
+    
+    ysize = ymax+1-ymin
+    xsize = xmax+1-xmin
+    
+    cutout = Cutout2D(data,
+                      (xmid,ymid),
+                      (ysize,xsize),
+                      wcs=wcs)
+    
+    hdu_trimmed = hdu.copy()
+    hdu_trimmed.data = cutout.data
+    hdu_trimmed.header.update(cutout.wcs.to_header())
+    
+    if hdu_out is not None:
+        hdu_trimmed.writeto(hdu_out,overwrite=True)
+    
+    return hdu_trimmed

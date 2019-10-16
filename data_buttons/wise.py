@@ -19,6 +19,7 @@ def wise_button(
     filters="all",
     radius=0.2 * u.degree,
     filepath=None,
+    download_data=True,
     create_mosaic=True,
     jy_conversion=True,
     verbose=False,
@@ -41,17 +42,15 @@ def wise_button(
         filepath (str, optional): Path to save the working and output
             files to. If not specified, saves to current working 
             directory.
+        download_data (bool, optional): If True, will download data using
+            MontagePy. Defaults to True.
         create_mosaic (bool, optional): Switching this to True will 
-            download data and mosaic as appropriate. You may wish to set
-            this to False if you've already downloaded the data previously.
-            Defaults to True.
+            mosaic data as appropriate. Defaults to True.
         jy_conversion (bool, optional): Convert the mosaicked file from
             raw units to Jy/pix. Defaults to True.
         verbose (bool, optional): Print out messages during the process.
             Useful mainly for debugging purposes or large images. 
             Defaults to False.
-            
-    Todo:
     
     """
     
@@ -69,10 +68,12 @@ def wise_button(
         
     steps = []
     
-    if create_mosaic:
+    if download_data:
         steps.append(1)
-    if jy_conversion:
+    if create_mosaic:
         steps.append(2)
+    if jy_conversion:
+        steps.append(3)
 
     for galaxy in galaxies:
         
@@ -87,8 +88,17 @@ def wise_button(
             if verbose:
                 print('Beginning W'+wise_filter)
             
-            if not os.path.exists(galaxy + "/W" + wise_filter):
-                os.mkdir(galaxy + "/W" + wise_filter)
+            if not os.path.exists(galaxy + "/WISE"):
+                os.mkdir(galaxy + "/WISE")
+                
+            if not os.path.exists(galaxy + "/WISE/W" + wise_filter):
+                os.mkdir(galaxy + "/WISE/W" + wise_filter)
+                
+            if not os.path.exists(galaxy + "/WISE/W" + wise_filter+'/raw'):
+                os.mkdir(galaxy + "/WISE/W" + wise_filter+'/raw')
+                
+            if not os.path.exists(galaxy + "/WISE/W" + wise_filter+'/outputs'):
+                os.mkdir(galaxy + "/WISE/W" + wise_filter+'/outputs')
                 
             if 1 in steps:
 
@@ -102,46 +112,50 @@ def wise_button(
                     "WISE " + wise_filter,
                     galaxy,
                     2 * radius.value,
-                    galaxy + "/W" + wise_filter,
+                    galaxy + "/WISE/W" + wise_filter+'/raw',
                 )
+                
+            if 2 in steps:
                 
                 # Mosaic all these files together.
     
                 if verbose:
                     print("Beginning mosaic")
     
-                _ = mHdr(
+                mHdr(
                     galaxy,
                     2 * radius.value,
                     2 * radius.value,
-                    galaxy + "/header.hdr",
+                    galaxy + "/WISE/W" + wise_filter+"/outputs/header.hdr",
                     resolution=1.375,
-                )
+                    )
     
                 tools.mosaic(
-                    galaxy + "/W" + wise_filter, 
-                    header=galaxy + "/header.hdr", 
+                    galaxy + "/WISE/W" + wise_filter+'/raw', 
+                    header=galaxy + "/WISE/W" + wise_filter+"/outputs/header.hdr", 
+                    verbose=verbose,
                     **kwargs
-                )
+                    )
     
                 os.rename("mosaic/mosaic.fits", 
-                          galaxy + "_W" + wise_filter + ".fits")
+                          galaxy + "/WISE/W" + wise_filter + "/outputs/"+galaxy+".fits")
     
                 # Clear out the mosaic folder.
     
                 shutil.rmtree("mosaic/", ignore_errors=True)
             
-            if 2 in steps:
+            if 3 in steps:
                 
                 if verbose:
                     print('Converting to Jy')
                     
                 # Convert to Jy.
             
-                convert_to_jy(galaxy + "_W" + wise_filter,
-                              wise_filter)
+                convert_to_jy(galaxy + "/WISE/W" + wise_filter + "/outputs/"+galaxy+".fits",
+                              wise_filter,
+                              hdu_out=galaxy + "/WISE/"+galaxy+"_W" + wise_filter+".fits")
             
-def convert_to_jy(hdu_in,wise_filter,save=True):
+def convert_to_jy(hdu_in,wise_filter,hdu_out=None):
     
     """Convert from WISE DN to Jy/pixel.
     
@@ -151,11 +165,11 @@ def convert_to_jy(hdu_in,wise_filter,save=True):
     
     Args:
         hdu_in (str or astropy.io.fits.PrimaryHDU): File name of WISE 
-            .fits file (excluding the .fits extension), or an Astropy 
-            PrimaryHDU instance (i.e. the result of ``fits.open(file)[0]``).
+            .fits file, or an Astropy PrimaryHDU instance (i.e. the
+            result of ``fits.open(file)[0]``).
         wise_filter (str): Either '1', '2', '3', or '4'.
-        save (bool, optional): Save out the converted file. It'll save
-            the original file with an appended '_jy'. Defaults to True.
+        hdu_out (str, optional): If not None, will save the converted HDU
+            out with this filename. Defaults to None.
         
     Returns:
         astropy.io.fits.PrimaryHDU: The HDU in units of Jy/pix.
@@ -163,7 +177,7 @@ def convert_to_jy(hdu_in,wise_filter,save=True):
     """
     
     if isinstance(hdu_in,str):
-        hdu = fits.open(hdu_in+'.fits')[0]
+        hdu = fits.open(hdu_in)[0]
     else:
         hdu = hdu_in.copy()
     
@@ -181,8 +195,8 @@ def convert_to_jy(hdu_in,wise_filter,save=True):
     
     header['BUNIT'] = 'Jy/pix'
     
-    if save:
-        fits.writeto(hdu_in+'_jy.fits',
+    if hdu_out is not None:
+        fits.writeto(hdu_out,
                      data,header,
                      overwrite=True)
         

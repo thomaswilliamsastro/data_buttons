@@ -21,6 +21,7 @@ def two_mass_button(
     filters="all",
     radius=0.2 * u.degree,
     filepath=None,
+    download_data=True,
     create_mosaic=True,
     jy_conversion=True,
     verbose=False,
@@ -43,17 +44,15 @@ def two_mass_button(
         filepath (str, optional): Path to save the working and output
             files to. If not specified, saves to current working 
             directory.
+        download_data (bool, optional): If True, will download data using
+            MontagePy. Defaults to True.
         create_mosaic (bool, optional): Switching this to True will 
-            download data and mosaic as appropriate. You may wish to set
-            this to False if you've already downloaded the data previously.
-            Defaults to True.
+            mosaic data as appropriate. Defaults to True.
         jy_conversion (bool, optional): Convert the mosaicked file from
             raw units to Jy/pix. Defaults to True.
         verbose (bool, optional): Print out messages during the process.
             Useful mainly for debugging purposes or large images. 
             Defaults to False.
-            
-    Todo:
     
     """
     
@@ -71,10 +70,12 @@ def two_mass_button(
         
     steps = []
     
-    if create_mosaic:
+    if download_data:
         steps.append(1)
-    if jy_conversion:
+    if create_mosaic:
         steps.append(2)
+    if jy_conversion:
+        steps.append(3)
 
     for galaxy in galaxies:
         
@@ -88,9 +89,21 @@ def two_mass_button(
             
             if verbose:
                 print('Beginning 2MASS '+two_mass_filter)
+                
+            if not os.path.exists(galaxy + "/2MASS"):
+                os.mkdir(galaxy + "/2MASS")
             
-            if not os.path.exists(galaxy + "/2MASS_" + two_mass_filter):
-                os.mkdir(galaxy + "/2MASS_" + two_mass_filter)
+            if not os.path.exists(galaxy + "/2MASS/" + two_mass_filter):
+                os.mkdir(galaxy + "/2MASS/" + two_mass_filter)
+                
+            if not os.path.exists(galaxy + "/2MASS/" + two_mass_filter+"/raw"):
+                os.mkdir(galaxy + "/2MASS/" + two_mass_filter+"/raw")
+                
+            if not os.path.exists(galaxy + "/2MASS/" + two_mass_filter+"/data"):
+                os.mkdir(galaxy + "/2MASS/" + two_mass_filter+"/data")
+                
+            if not os.path.exists(galaxy + "/2MASS/" + two_mass_filter+"/outputs"):
+                os.mkdir(galaxy + "/2MASS/" + two_mass_filter+"/outputs")
                 
             if 1 in steps:
 
@@ -104,12 +117,12 @@ def two_mass_button(
                     "2MASS " + two_mass_filter,
                     galaxy,
                     2 * radius.value,
-                    galaxy + "/2MASS_" + two_mass_filter,
+                    galaxy + "/2MASS/" + two_mass_filter+"/raw",
                 )
                 
                 # We need to now convert these into magnitudes.
                 
-                two_mass_files = glob.glob(galaxy+'/2MASS_'+ two_mass_filter+'/*')
+                two_mass_files = glob.glob(galaxy+'/2MASS/'+ two_mass_filter+'/raw/*')
                 
                 for two_mass_file in two_mass_files:
                     
@@ -118,47 +131,51 @@ def two_mass_button(
                     
                     hdu.data = magzp - 2.5*np.log10(hdu.data)
                     
-                    fits.writeto(two_mass_file,
+                    fits.writeto(two_mass_file.replace('/raw/','/data/'),
                                  hdu.data,hdu.header,
                                  overwrite=True)
+                    
+            if 2 in steps:
                 
                 # Mosaic all these files together.
     
                 if verbose:
                     print("Beginning mosaic")
     
-                _ = mHdr(
+                mHdr(
                     galaxy,
                     2 * radius.value,
                     2 * radius.value,
-                    galaxy + "/header.hdr",
+                    galaxy + "/2MASS/"+ two_mass_filter+"/outputs/header.hdr",
                     resolution=1,
-                )
+                    )
     
                 tools.mosaic(
-                    galaxy + "/2MASS_" + two_mass_filter, 
-                    header=galaxy + "/header.hdr", 
+                    galaxy + "/2MASS/" + two_mass_filter+"/data", 
+                    header=galaxy + "/2MASS/"+ two_mass_filter+"/outputs/header.hdr", 
+                    verbose=verbose,
                     **kwargs
-                )
+                    )
     
                 os.rename("mosaic/mosaic.fits", 
-                          galaxy + "_2MASS_" + two_mass_filter + ".fits")
+                          galaxy + "/2MASS/"+ two_mass_filter+"/outputs/"+galaxy+ ".fits")
     
                 # Clear out the mosaic folder.
     
                 shutil.rmtree("mosaic/", ignore_errors=True)
             
-            if 2 in steps:
+            if 3 in steps:
                 
                 if verbose:
                     print('Converting to Jy')
                     
                 # Convert to Jy.
             
-                convert_to_jy(galaxy + "_2MASS_" + two_mass_filter,
-                              two_mass_filter)
+                convert_to_jy(galaxy + "/2MASS/"+ two_mass_filter+"/outputs/"+galaxy+ ".fits",
+                              two_mass_filter,
+                              galaxy + "/2MASS/"+galaxy+"_"+ two_mass_filter+".fits")
             
-def convert_to_jy(hdu_in,two_mass_filter,save=True):
+def convert_to_jy(hdu_in,two_mass_filter,hdu_out=None):
     
     """Convert from Vega magnitudes to Jy/pixel.
     
@@ -170,11 +187,11 @@ def convert_to_jy(hdu_in,two_mass_filter,save=True):
     
     Args:
         hdu_in (str or astropy.io.fits.PrimaryHDU): File name of 2MASS 
-            .fits file (excluding the .fits extension), or an Astropy 
-            PrimaryHDU instance (i.e. the result of ``fits.open(file)[0]``).
+            .fits file, or an Astropy PrimaryHDU instance (i.e. the result 
+            of ``fits.open(file)[0]``).
         two_mass_filter (str): Either 'J', 'H', or 'K'.
-        save (bool, optional): Save out the converted file. It'll save
-            the original file with an appended '_jy'. Defaults to True.
+        hdu_out (str, optional): If not None, will save the converted HDU
+            out with this filename. Defaults to None.
         
     Returns:
         astropy.io.fits.PrimaryHDU: The HDU in units of Jy/pix.
@@ -182,7 +199,7 @@ def convert_to_jy(hdu_in,two_mass_filter,save=True):
     """
     
     if isinstance(hdu_in,str):
-        hdu = fits.open(hdu_in+'.fits')[0]
+        hdu = fits.open(hdu_in)[0]
     else:
         hdu = hdu_in.copy()
     
@@ -199,8 +216,8 @@ def convert_to_jy(hdu_in,two_mass_filter,save=True):
     
     header['BUNIT'] = 'Jy/pix'
     
-    if save:
-        fits.writeto(hdu_in+'_jy.fits',
+    if hdu_out is not None:
+        fits.writeto(hdu_out,
                      data,header,
                      overwrite=True)
         
