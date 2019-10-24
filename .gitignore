@@ -107,6 +107,7 @@ venv.bak/
 
 # Eclipse
 
+.settings
 .project
 .pydevproject
 /docs/_build/html/_static/

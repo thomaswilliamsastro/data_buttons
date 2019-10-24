@@ -29,10 +29,9 @@ Current capabilities
 
 ``data_buttons`` currently works with GALEX (``data_buttons.galex``), 
 SDSS (``data_buttons.sdss``), 2MASS (``data_buttons.two_mass``),
-WISE (``data_buttons.wise``), and HST (``data_buttons.hst``) data. In the 
-case of GALEX, the mosaic is weighted by the exposure time. For HST data,
-outputs are produced for each proposal ID. 
-More telescopes and data coming soon!
+WISE (``data_buttons.wise``), HST (``data_buttons.hst``), Spizter (``data_buttons.spitzer``),
+Herschel (``data_buttons.herschel``), and Planck (``data_buttons.planck``)
+data. More telescopes and data coming soon!
 
 .. warning::
     I am not well-versed in HST data, and that module should be considered
@@ -83,17 +82,17 @@ to this particular proposal on this particular instrument.
     os.chdir('directory')
     
     galaxy = 'M1'
-	prop_id = '8222'
-	instrument = 'WFPC2/WFC'
-	
-	# Create the mosaics of M1.
-
-	hst.hst_button(galaxy,
-	               instruments=instrument,
-	               prop_ids=prop_id,
-	               skymethod='globalmin',
-	               verbose=True,
-	               )
+    prop_id = '8222'
+    instrument = 'WFPC2/WFC'
+    
+    # Create the mosaics of M1.
+    
+    hst.hst_button(galaxy,
+                   instruments=instrument,
+                   prop_ids=prop_id,
+                   skymethod='globalmin',
+                   verbose=True,
+                   )
 	               
 Generally, I've found the default skymethod in the button ('globalmin+match')
 to be fine, but since these observations have very little overlap it causes

@@ -1,13 +1,16 @@
 # Ensure python3 compatibility
 from __future__ import absolute_import, print_function, division
 
+import glob
 import os
 import shutil
 
 import astropy.units as u
 from astropy.io import fits
+from astroquery.ned import Ned
 from MontagePy.archive import mArchiveDownload
 from MontagePy.main import mHdr
+import numpy as np
 
 from . import tools
 
@@ -15,7 +18,7 @@ from . import tools
 def sdss_button(
     galaxies,
     filters="all",
-    radius=0.2 * u.degree,
+    radius=None,
     filepath=None,
     download_data=True,
     create_mosaic=True,
@@ -35,7 +38,8 @@ def sdss_button(
             'r', 'i', or 'z'. If you want everything, select 'all'. 
             Defaults to 'all'.
         radius (astropy.units.Quantity, optional): Radius around the 
-            galaxy to search for observations. Defaults to 0.2 degrees.
+            galaxy to search for observations. Defaults to None, where
+            it will query Ned to get size.
         filepath (str, optional): Path to save the working and output
             files to. If not specified, saves to current working 
             directory.
@@ -63,6 +67,11 @@ def sdss_button(
     if filepath is not None:
         os.chdir(filepath)
         
+    if radius is not None:
+        original_radius = radius.copy()
+    else:
+        original_radius = None
+        
     steps = []
     
     if download_data:
@@ -71,11 +80,31 @@ def sdss_button(
         steps.append(2)
     if jy_conversion:
         steps.append(3)
+        
+    # Read in the list of SDSS Primary Fields
+    
+    run, _, camcol, field = np.loadtxt(
+        os.path.dirname(os.path.realpath(__file__))
+        +'/SDSS_DR12_Primary_Fields.dat',
+        unpack=True)
 
     for galaxy in galaxies:
         
         if verbose:
             print('Beginning '+galaxy)
+            
+        if radius is None:
+        
+            try:
+ 
+                size_query = Ned.get_table(galaxy,table='diameters')
+                radius = 1.2*np.max(size_query['NED Major Axis'])/2*u.arcsec
+                radius = radius.to(u.deg)
+     
+            except:
+                
+                raise Warning(galaxy+' not resolved by Ned, using 0.2deg radius.')
+                radius = 0.2*u.degree
 
         if not os.path.exists(galaxy):
             os.mkdir(galaxy)
@@ -111,6 +140,23 @@ def sdss_button(
                     2 * radius.value,
                     galaxy + "/SDSS/" + sdss_filter+'/raw',
                 )
+
+                # Filter out any frames that aren't primary
+                
+                sdss_files = glob.glob(galaxy + "/SDSS/" + sdss_filter+'/raw/*.fits')
+                
+                for sdss_file in sdss_files:
+                    
+                    sdss_file_strip = sdss_file.split('/')[-1].split('.fits')[0]
+                    
+                    sdss_file_split = sdss_file_strip.split('-')
+                    
+                    primary_idx = np.where( (run == int(sdss_file_split[2])) & 
+                                            (camcol == int(sdss_file_split[3])) &
+                                            (field == int(sdss_file_split[4])))
+                    
+                    if len(primary_idx[0]) == 0:
+                        os.remove(sdss_file)
                 
             if 2 in steps:
     
@@ -151,6 +197,11 @@ def sdss_button(
                 convert_to_jy(galaxy + "/SDSS/" + sdss_filter + "/outputs/"+galaxy+".fits",
                               sdss_filter,
                               hdu_out=galaxy + "/SDSS/"+galaxy+"_" + sdss_filter+".fits")
+                
+        if original_radius is None:
+            radius = None
+        else:
+            radius = original_radius.copy()
             
 def convert_to_jy(hdu_in,sdss_filter,hdu_out=None):
     

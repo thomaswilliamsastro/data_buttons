@@ -36,6 +36,27 @@ HST
 
 .. automodule:: data_buttons.hst
     :members:
+    
+*******
+Spitzer
+*******
+
+.. automodule:: data_buttons.spitzer
+    :members:
+    
+********
+Herschel
+********
+
+.. automodule:: data_buttons.herschel
+    :members:
+    
+******
+Planck
+******
+
+.. automodule:: data_buttons.planck
+    :members:
 
 *****
 Tools

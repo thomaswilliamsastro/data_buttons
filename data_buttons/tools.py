@@ -4,20 +4,24 @@ from __future__ import absolute_import, print_function, division
 import os
 import shutil
 import warnings
+import glob
+import wget
 
 import numpy as np
+from astropy.convolution import Gaussian2DKernel, interpolate_replace_nans
 from astropy.io import fits
 from astropy.modeling import models, fitting
 from astropy.nddata.utils import Cutout2D
 from astropy.stats import sigma_clipped_stats
+import astropy.units as u
 from astropy.wcs import WCS
 from MontagePy.archive import *
 from MontagePy.main import *
 from photutils import make_source_mask
 
 
-def mosaic(input_folder, header=None, output_folder="mosaic", background_match=True,
-           verbose=False,**kwargs):
+def mosaic(input_folder, header=None, output_folder="mosaic", reproject=True,
+           background_match=True, haveAreas=False,verbose=False,):
 
     """Mosaic together a folder full of .fits files.
     
@@ -25,7 +29,8 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
     requires to combine all the .fits files within that folder. Also,
     optionally performs background modelling and matching (which most
     users will want to set to true). Note that this is not a background
-    subtraction!
+    subtraction! Can also be set to weight the final added images, for
+    instance if you have input files of different exposure times.
     
     Args:
         input_folder (str): Folder of raw files to mosaic.
@@ -34,8 +39,16 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
             overlap.
         output_folder (str, optional): Working folder for mosaicking.
             Defaults to 'mosaic'.
+        reproject (bool, optional): Whether to reproject input images or
+            not. If already on same pixel scale, you can skip this. In 
+            this case, it will move files from input_folder to the projected
+            folder. Defaults to True.
         background_match (bool, optional): Whether to perform background
             matching steps while mosaicking. Defaults to True.
+        haveAreas (bool, optional): If weighting a mosaic, you can use
+            _area.fits files to effectively weight properly. If true, 
+            before co-adding the area files will be moved alongside
+            the data files. Defaults to False.
         verbose (bool, optional): Print out verbose statements during
             the mosaicking process. Useful for debugging. Defaults to
             False.
@@ -46,15 +59,19 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
 
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
-
-    os.mkdir(output_folder + "/projected")
+ 
+    if not os.path.exists(output_folder + "/projected") and reproject:
+        os.mkdir(output_folder + "/projected")
+         
     if background_match:
-        os.mkdir(output_folder + "/diffs")
-        os.mkdir(output_folder + "/corrected")
+        if not os.path.exists(output_folder + "/diffs"):
+            os.mkdir(output_folder + "/diffs")
+        if not os.path.exists(output_folder + "/corrected"):
+            os.mkdir(output_folder + "/corrected")
 
     # Make an optimum header for these images
-
-    mImgtbl(input_folder, output_folder + "/images.tbl")
+    
+    mImgtbl(input_folder, output_folder + "/images.tbl",)
 
     if header is None:
         mMakeHdr(output_folder + "/images.tbl", output_folder + "/header.hdr")
@@ -63,16 +80,26 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
 
     # Project the original images to this header
     
-    if verbose:
-        print('Reprojecting images to optimum header')
+    if reproject:
+        
+        if verbose:
+            print('Reprojecting images to optimum header')
+    
+        mProjExec(
+            input_folder,
+            output_folder + "/images.tbl",
+            output_folder + "/header.hdr",
+            projdir=output_folder + "/projected",
+            quickMode=False,
+        )
 
-    mProjExec(
-        input_folder,
-        output_folder + "/images.tbl",
-        output_folder + "/header.hdr",
-        projdir=output_folder + "/projected",
-        quickMode=False,
-    )
+    else:
+        
+        if verbose:
+            print('Moving existing reprojected images')
+            
+        shutil.copytree(input_folder,
+                        output_folder+"/projected")
 
     mImgtbl(output_folder + "/projected", output_folder + "/images.tbl")
 
@@ -87,6 +114,9 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
         
         if verbose:
             print('Fitting overlap differences')
+            
+        # If we're properly weighting later this can cause some issues
+        # so turn off including the _area files in this case.
         
         mDiffFitExec(
             output_folder + "/projected",
@@ -94,6 +124,7 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
             output_folder + "/header.hdr",
             output_folder + "/diffs",
             output_folder + "/fits.tbl",
+            noAreas = haveAreas,
         )
         
         if verbose:
@@ -113,6 +144,7 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
             output_folder + "/images.tbl",
             output_folder + "/corrections.tbl",
             output_folder + "/corrected",
+#             noAreas = haveAreas,
         )
         mImgtbl(output_folder + "/corrected", output_folder + "/images.tbl")
 
@@ -131,7 +163,7 @@ def mosaic(input_folder, header=None, output_folder="mosaic", background_match=T
         output_folder + "/images.tbl",
         output_folder + "/header.hdr",
         output_folder + "/mosaic.fits",
-        **kwargs
+        haveAreas=haveAreas,
     )
 
     # Remove the temp folders we've made along the way
@@ -181,6 +213,41 @@ def background_median(data,sigma=3,npixels=5,maxiters=20,
                                      maxiters=maxiters,**kwargs)
     
     return median 
+
+def make_header(galaxy,width=0.2,height=0.2,
+                output_file='hdr.hdr',resolution=1):
+    
+    """Replacement for mHdr.
+    
+    mHdr seems to have broken with an IRSA update. This should function
+    the same way.
+    
+    Args:
+        galaxy (str): Target to resolve.
+        width (float, optional): Output image width in decimal degrees.
+            Defaults to 0.2 deg.
+        height (float, optional): Output image height in decimal degrees.
+            Defaults to 0.2 deg.
+        output_file (str, optional): Filename for output header. Defaults
+            to hdr.hdr.
+        resolution (float, optional): Resolution of output image in 
+            arcsec. Defaults to 1.
+            
+    """
+    
+    base_url = 'https://irsa.ipac.caltech.edu/cgi-bin/HdrTemplate/nph-hdr?'
+    base_url += 'location='+galaxy+'&'
+    base_url += 'width='+str(width)+'&'
+    base_url += 'height='+str(height)+'&'
+    base_url += 'resolution='+str(resolution)
+    
+    os.system('wget "'+base_url+'"')
+    
+    # Rename downloaded hdr
+    
+    hdr_file = glob.glob('nph-hdr*')[0]
+    
+    os.rename(hdr_file,output_file)
 
 def model_background(data,poly_order=5,sigma=2,npixels=5,
                      **kwargs):
@@ -300,3 +367,27 @@ def optimize_size(hdu,hdu_out=None):
         hdu_trimmed.writeto(hdu_out,overwrite=True)
     
     return hdu_trimmed
+
+def interp_nans(data,x_stddev=1):
+    
+    """Interpolate over any NaNs present in a final mosaic.
+    
+    Uses the Astropy.convolution interpolate_replace_nans to smooth over
+    any gaps left in an image. This may be particularly useful for
+    WFPC2 images, where there are small gaps between chips.
+    
+    Args:
+        data (numpy.ndarray): Input data to interpolate NaNs over.
+        x_stddev (int, optional): Standard deviation of the Gaussian kernel.
+            Defaults to 1 (pixel).
+            
+    Returns:
+        numpy.ndarray: The data with NaNs interpolated over
+        
+    """
+    
+    kernel = Gaussian2DKernel(x_stddev=x_stddev)
+    
+    image_interp = interpolate_replace_nans(data,kernel)
+    
+    return image_interp

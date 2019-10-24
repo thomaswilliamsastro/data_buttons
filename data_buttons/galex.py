@@ -12,7 +12,8 @@ import astropy.units as u
 import numpy as np
 from astropy.io import fits
 from astroquery.mast import Observations
-from MontagePy.main import mHdr
+from astroquery.ned import Ned
+from MontagePy.main import mProject, mHdr
 
 from . import tools
 
@@ -20,7 +21,7 @@ from . import tools
 def galex_button(
     galaxies,
     filters="both",
-    radius=0.2 * u.degree,
+    radius=None,
     filepath=None,
     download_data=True,
     create_mosaic=True,
@@ -44,7 +45,8 @@ def galex_button(
             which GALEX filters to create a mosaic for. Defaults to
             'both'.
         radius (astropy.units.Quantity, optional): Radius around the 
-            galaxy to search for observations. Defaults to 0.2 degrees.
+            galaxy to search for observations. Defaults to None, where
+            it will query Ned to get size.
         filepath (str, optional): Path to save the working and output
             files to. If not specified, saves to current working 
             directory.
@@ -72,6 +74,11 @@ def galex_button(
     if filepath is not None:
         os.chdir(filepath)
         
+    if radius is not None:
+        original_radius = radius.copy()
+    else:
+        original_radius = None
+        
     steps = []
     
     if download_data:
@@ -85,11 +92,30 @@ def galex_button(
         
         if verbose:
             print('Beginning '+galaxy)
+            
+        if radius is None:
+            
+            try:
+ 
+                size_query = Ned.get_table(galaxy,table='diameters')
+                radius = 1.2*np.max(size_query['NED Major Axis'])/2*u.arcsec
+                radius = radius.to(u.deg)
+     
+            except:
+                
+                raise Warning(galaxy+' not resolved by Ned, using 0.2deg radius.')
+                radius = 0.2*u.degree
 
         if not os.path.exists(galaxy):
             os.mkdir(galaxy)
 
-        obs_table = Observations.query_object(galaxy, radius=radius)
+        obs_table = Observations.query_criteria(objectname=galaxy,
+                                                radius=radius,
+                                                obs_type='all',
+                                                obs_collection='GALEX')
+        
+        # Ignore any calibration observations.
+        obs_table = obs_table[obs_table['intentType'] == 'science']
 
         for galex_filter in filters:
             
@@ -137,8 +163,10 @@ def galex_button(
                     os.mkdir(galaxy + "/GALEX/" + galex_filter+'/raw')
                 if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/data'):
                     os.mkdir(galaxy + "/GALEX/" + galex_filter+'/data')
-                if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/exptime'):
-                    os.mkdir(galaxy + "/GALEX/" + galex_filter+'/exptime')
+                if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/reprojected'):
+                    os.mkdir(galaxy + "/GALEX/" + galex_filter+'/reprojected')
+                if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/weight'):
+                    os.mkdir(galaxy + "/GALEX/" + galex_filter+'/weight')
                 if not os.path.exists(galaxy + "/GALEX/" + galex_filter+'/outputs'):
                     os.mkdir(galaxy + "/GALEX/" + galex_filter+'/outputs')
 
@@ -173,13 +201,21 @@ def galex_button(
                 # Clean up any temporary files.
 
                 shutil.rmtree("galex_temp/" + galaxy, ignore_errors=True)
+                
+            mHdr(galaxy,
+                 2 * radius.value,
+                 2 * radius.value,
+                 galaxy + "/GALEX/"+galex_filter+"/outputs/header.hdr",
+                 resolution=1.5,
+                 )
                     
             if 2 in steps:
 
                 # Read in these files and set anything more than 35
-                # arcmin out to NaN. At the same time, convert from 
-                # counts/s to raw counts so it's properly weighted in
-                # the coadd later.
+                # arcmin out to NaN.
+                
+                if verbose:
+                    print('Performing initial weighted reprojections')
 
                 galex_files = glob.glob(galaxy + "/GALEX/" + galex_filter + "/raw/*")
 
@@ -198,21 +234,24 @@ def galex_button(
                     r = iv ** 2 + jv ** 2
 
                     hdu.data[r >= 1400 ** 2] = np.nan
-                    
-                    hdu.data *= hdu.header['EXPTIME']
-                    
-                    galex_filepath = galex_file.split('/raw/')
-                    data_file = galex_filepath[0]+'/data/'+galex_filepath[1]
 
-                    fits.writeto(data_file, hdu.data, hdu.header, overwrite=True)
+                    hdu.writeto(galex_file.replace('/raw/','/data/'), overwrite=True)
                     
-                    # Also create a map of exposure time
+                    # Also create a weight map (sqrt EXPTIME).
                     
-                    exp_file = galex_filepath[0]+'/exptime/'+galex_filepath[1]
+                    exp_time = np.ones(hdu.data.shape)*hdu.header['EXPTIME']**0.5
+                    exp_time[np.isnan(hdu.data) == True] = np.nan
                     
-                    exposure_time = np.ones(hdu.data.shape)*hdu.header['EXPTIME']
-                    exposure_time[np.isnan(hdu.data) == True] = np.nan
-                    fits.writeto(exp_file, exposure_time, hdu.header, overwrite=True)
+                    fits.writeto(galex_file.replace('/raw/','/weight/'),
+                                 exp_time,hdu.header,
+                                 overwrite=True)
+                    
+                    # And reproject each map separately using this weighting.
+                    
+                    mProject(galex_file.replace('/raw/','/data/'),
+                             galex_file.replace('/raw/','/reprojected/'),
+                             galaxy + "/GALEX/"+galex_filter+"/outputs/header.hdr",
+                             weight_file=galex_file.replace('/raw/','/weight/'))
 
                 # And mosaic!
 
@@ -228,41 +267,19 @@ def galex_button(
                     )
 
                 tools.mosaic(
-                    galaxy + "/GALEX/" + galex_filter+'/data',
+                    galaxy + "/GALEX/" + galex_filter+'/reprojected',
                     header=galaxy+"/GALEX/"+galex_filter+"/outputs/header.hdr",
                     verbose=verbose,
-                    coadd=3
+                    reproject=False,
+                    haveAreas=True,
                     )
                 
                 os.rename(
                     "mosaic/mosaic.fits", 
-                    galaxy + "/GALEX/"+galex_filter+"/outputs/"+galaxy+'_data.fits'
-                    )
-
-                tools.mosaic(
-                    galaxy + "/GALEX/" + galex_filter + "/exptime",
-                    header=galaxy+"/GALEX/"+galex_filter+"/outputs/header.hdr",
-                    verbose=verbose,
-                    coadd=3
-                    )
-
-                os.rename(
-                    "mosaic/mosaic.fits", 
-                    galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+"_exptime.fits"
+                    galaxy + "/GALEX/"+galex_filter+"/outputs/"+galaxy+'.fits'
                     )
 
                 shutil.rmtree("mosaic/", ignore_errors=True)
-                    
-                # Convert back to counts/sec
-                
-                hdu = fits.open(galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+"_data.fits")[0]
-                hdu_exp = fits.open(galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+"_exptime.fits")[0]
-                
-                hdu.data /= hdu_exp.data
-                
-                fits.writeto(galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+".fits",
-                             hdu.data,hdu.header,
-                             overwrite=True)
                     
             if 3 in steps:
                 
@@ -274,6 +291,11 @@ def galex_button(
                 convert_to_jy(galaxy + "/GALEX/" + galex_filter +'/outputs/'+galaxy+".fits",
                               galex_filter,
                               hdu_out=galaxy + "/GALEX/"+galaxy+'_' + galex_filter + ".fits")
+                
+        if original_radius is None:
+            radius = None
+        else:
+            radius = original_radius.copy()
         
 def convert_to_jy(hdu_in,galex_filter,hdu_out=None):
     

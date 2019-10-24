@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='data_buttons',
-    version='0.2',
+    version='0.5',
     url='http://data-buttons.readthedocs.io',
     license='GPL-3.0',
     author='Thomas Williams',

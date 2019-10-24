@@ -7,6 +7,7 @@ import glob
 
 import astropy.units as u
 from astropy.io import fits
+from astroquery.ned import Ned
 import numpy as np
 from MontagePy.archive import mArchiveDownload
 from MontagePy.main import mHdr
@@ -19,7 +20,7 @@ from . import tools
 def two_mass_button(
     galaxies,
     filters="all",
-    radius=0.2 * u.degree,
+    radius=None,
     filepath=None,
     download_data=True,
     create_mosaic=True,
@@ -40,7 +41,8 @@ def two_mass_button(
             and 'K'. If you want everything, select 'all'. Defaults 
             to 'all'.
         radius (astropy.units.Quantity, optional): Radius around the 
-            galaxy to search for observations. Defaults to 0.2 degrees.
+            galaxy to search for observations. Defaults to None, where
+            it will query Ned to get size.
         filepath (str, optional): Path to save the working and output
             files to. If not specified, saves to current working 
             directory.
@@ -68,6 +70,11 @@ def two_mass_button(
     if filepath is not None:
         os.chdir(filepath)
         
+    if radius is not None:
+        original_radius = radius.copy()
+    else:
+        original_radius = None
+        
     steps = []
     
     if download_data:
@@ -81,6 +88,19 @@ def two_mass_button(
         
         if verbose:
             print('Beginning '+galaxy)
+            
+        if radius is None:
+        
+            try:
+ 
+                size_query = Ned.get_table(galaxy,table='diameters')
+                radius = 1.2*np.max(size_query['NED Major Axis'])/2*u.arcsec
+                radius = radius.to(u.deg)
+     
+            except:
+                
+                raise Warning(galaxy+' not resolved by Ned, using 0.2deg radius.')
+                radius = 0.2*u.degree
 
         if not os.path.exists(galaxy):
             os.mkdir(galaxy)
@@ -174,6 +194,11 @@ def two_mass_button(
                 convert_to_jy(galaxy + "/2MASS/"+ two_mass_filter+"/outputs/"+galaxy+ ".fits",
                               two_mass_filter,
                               galaxy + "/2MASS/"+galaxy+"_"+ two_mass_filter+".fits")
+                
+        if original_radius is None:
+            radius = None
+        else:
+            radius = original_radius.copy()
             
 def convert_to_jy(hdu_in,two_mass_filter,hdu_out=None):
     

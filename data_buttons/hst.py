@@ -15,6 +15,7 @@ from astropy.io import fits
 from astropy.table import Table
 from astroquery.mast import Observations
 from astroquery.gaia import Gaia
+from astroquery.ned import Ned
 from drizzlepac import astrodrizzle, photeq, tweakreg, tweakback
 import stwcs
 import crds
@@ -29,7 +30,7 @@ def hst_button(
     instruments="ACS/WFC",
     prop_ids=None,
     filters=None,
-    radius=0.2*u.degree,
+    radius=None,
     filepath=None,
     download_data=True,
     correct_astrometry=True,
@@ -78,7 +79,8 @@ def hst_button(
             Defaults to None, which will pull out all applicable filters
             for each instrument, for each proposal ID.
         radius (astropy.units.Quantity, optional): Radius around the 
-            galaxy to search for observations. Defaults to 0.2*u.degrees.
+            galaxy to search for observations. Defaults to None, where
+            it will query Ned to get size.
         filepath (str, optional): Path to save the working and output
             files to. If not specified, saves to current working 
             directory.
@@ -122,6 +124,11 @@ def hst_button(
         os.chdir(filepath)
         
     orig_dir = os.getcwd()
+    
+    if radius is not None:
+        original_radius = radius.copy()
+    else:
+        original_radius = None
         
     steps = []
     
@@ -184,6 +191,19 @@ def hst_button(
         hst_logger.info('Beginning '+galaxy)
         hst_logger.info(' ')
         hst_logger.info(' ')
+        
+        if radius is None:
+            
+            try:
+ 
+                size_query = Ned.get_table(galaxy,table='diameters')
+                radius = np.max(size_query['NED Major Axis'])/2*u.arcsec
+                radius = radius.to(u.deg)
+     
+            except:
+                
+                hst_logger.warning(galaxy+' not resolved by Ned, using 0.2deg radius.')
+                radius = 0.2*u.degree
  
         obs_table = Observations.query_criteria(objectname=galaxy,
                                                 radius=radius,
@@ -703,6 +723,11 @@ def hst_button(
                 prop_ids = None
                 
             hst_logger.info(' ')
+            
+        if original_radius is None:
+            radius = None
+        else:
+            radius = original_radius.copy()
             
     # Clear out the tmp folder and reset to the original.
     
